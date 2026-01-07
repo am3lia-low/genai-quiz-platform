@@ -1,0 +1,54 @@
+{
+  "gemini": {
+    "api_key": "api_key_here",
+    "model": "gemini-2.5-flash"
+  },
+  "pollinations": {
+    "api_key": "api_key_here",
+    "base_url": "https://image.pollinations.ai/prompt",
+    "model": "seedream-pro",
+    "cover_width": 1200,
+    "cover_height": 630,
+    "question_width": 800,
+    "question_height": 450,
+    "outcome_width": 600,
+    "outcome_height": 600,
+    "max_retries": 3,
+    "retry_delay_seconds": 5,
+    "request_delay_seconds": 5,
+    "timeout_seconds": 120,
+    "enhance": false,
+    "private": false,
+    "safe": true,
+    "nologo": true,
+    "style_suffix": "illustration style, no humans, no people, no faces, no text, no words, no letters, no writing, vibrant colors, detailed"
+  },
+  "quiz_settings": {
+    "personality": {
+      "questions_per_quiz": 7,
+      "outcomes_count": 4
+    },
+    "trivia": {
+      "questions_per_quiz": 10,
+      "options_per_question": 4
+    }
+  },
+  "categories": {
+    "personality": [
+      "pop_culture",
+      "mythology",
+      "psychology",
+      "movies",
+      "food",
+      "travel"
+    ],
+    "trivia": [
+      "pop_culture",
+      "sports",
+      "nature",
+      "history",
+      "science",
+      "geography"
+    ]
+  }
+}

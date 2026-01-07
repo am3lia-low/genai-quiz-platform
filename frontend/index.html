@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quizzle - Fun Quizzes That Know You</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            'display': ['Space Grotesk', 'sans-serif'],
+            'body': ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            'quiz-pink': '#FF6B9D',
+            'quiz-purple': '#C44CFF',
+            'quiz-blue': '#4C9FFF',
+            'quiz-yellow': '#FFD93D',
+            'quiz-green': '#6BCB77',
+            'quiz-dark': '#1a1a2e',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: #ffffff;
+      min-height: 100vh;
+    }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #FF6B9D, #C44CFF, #4C9FFF);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .quiz-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      transition: all 0.3s ease;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+    
+    .quiz-card:hover {
+      transform: translateY(-8px);
+      border-color: rgba(196, 76, 255, 0.5);
+      box-shadow: 0 20px 40px rgba(196, 76, 255, 0.15);
+    }
+    
+    .category-pill {
+      background: linear-gradient(135deg, rgba(255, 107, 157, 0.15), rgba(196, 76, 255, 0.15));
+      border: 1px solid rgba(255, 107, 157, 0.3);
+    }
+    
+    .type-badge {
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+    }
+    
+    .filter-btn {
+      transition: all 0.2s ease;
+      color: #374151;
+    }
+    
+    .filter-btn:hover {
+      background: #f3f4f6;
+    }
+    
+    .filter-btn.active {
+      background: linear-gradient(135deg, #FF6B9D, #C44CFF);
+      color: white;
+    }
+    
+    .hero-blob {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+      animation: float 8s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-20px) scale(1.05); }
+    }
+    
+    .loading-skeleton {
+      background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+    
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+  </style>
+</head>
+<body class="text-gray-800">
+  <!-- Hero Section -->
+  <header class="relative overflow-hidden py-16 px-4">
+    <!-- Decorative blobs -->
+    <div class="hero-blob w-96 h-96 bg-quiz-pink -top-20 -left-20"></div>
+    <div class="hero-blob w-80 h-80 bg-quiz-purple top-40 right-10" style="animation-delay: -2s;"></div>
+    <div class="hero-blob w-64 h-64 bg-quiz-blue bottom-0 left-1/3" style="animation-delay: -4s;"></div>
+    
+    <div class="relative z-10 max-w-6xl mx-auto text-center">
+      <h1 class="font-display text-5xl md:text-7xl font-bold mb-4">
+        <span class="gradient-text">Quizzle</span>
+      </h1>
+      <p class="text-xl md:text-2xl text-gray-600 mb-8 max-w-2xl mx-auto">
+        Discover yourself through fun, AI-powered quizzes. 
+        Which character are you? Test your knowledge!
+      </p>
+      
+      <!-- Filter buttons -->
+      <div class="flex flex-wrap justify-center gap-3 mb-8">
+        <button onclick="filterQuizzes('all')" 
+                class="filter-btn active px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
+          All Quizzes
+        </button>
+        <button onclick="filterQuizzes('personality')" 
+                class="filter-btn px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
+          🎭 Personality
+        </button>
+        <button onclick="filterQuizzes('trivia')" 
+                class="filter-btn px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
+          🧠 Trivia
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Quiz Gallery -->
+  <main class="max-w-7xl mx-auto px-4 pb-20">
+    <div id="quiz-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Quizzes will be loaded here -->
+      <div class="loading-skeleton quiz-card rounded-2xl h-80"></div>
+      <div class="loading-skeleton quiz-card rounded-2xl h-80"></div>
+      <div class="loading-skeleton quiz-card rounded-2xl h-80"></div>
+    </div>
+    
+    <!-- Empty state -->
+    <div id="empty-state" class="hidden text-center py-20">
+      <div class="text-6xl mb-4">🎭</div>
+      <h3 class="text-2xl font-display font-bold mb-2 text-gray-800">No Quizzes Yet!</h3>
+      <p class="text-gray-500">Run the pipeline to generate some quizzes.</p>
+      <code class="block mt-4 bg-gray-100 px-4 py-2 rounded-lg text-sm text-gray-700">
+        python pipeline/run_pipeline.py --batch 2
+      </code>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-gray-200 py-8 text-center text-gray-500 text-sm">
+    <p>Built with 💜 using AI • Quizzes generated by Gemini • Images by Pollinations.ai</p>
+  </footer>
+
+  <script>
+    let allQuizzes = [];
+    let currentFilter = 'all';
+
+    // Fetch quizzes from API
+    async function loadQuizzes() {
+      try {
+        const response = await fetch('/api/quizzes');
+        const data = await response.json();
+        allQuizzes = data.quizzes;
+        renderQuizzes();
+      } catch (error) {
+        console.error('Error loading quizzes:', error);
+        document.getElementById('quiz-grid').innerHTML = '';
+        document.getElementById('empty-state').classList.remove('hidden');
+      }
+    }
+
+    // Filter quizzes
+    function filterQuizzes(type) {
+      currentFilter = type;
+      
+      // Update button styles
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.classList.add('active');
+      
+      renderQuizzes();
+    }
+
+    // Render quiz cards
+    function renderQuizzes() {
+      const grid = document.getElementById('quiz-grid');
+      const emptyState = document.getElementById('empty-state');
+      
+      let filtered = allQuizzes;
+      if (currentFilter !== 'all') {
+        filtered = allQuizzes.filter(q => q.type === currentFilter);
+      }
+      
+      if (filtered.length === 0) {
+        grid.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        return;
+      }
+      
+      emptyState.classList.add('hidden');
+      
+      grid.innerHTML = filtered.map(quiz => `
+        <a href="/quiz.html?id=${quiz.id}" class="quiz-card rounded-2xl overflow-hidden block">
+          <div class="relative h-48 bg-gradient-to-br from-quiz-purple/30 to-quiz-pink/30">
+            ${quiz.coverImage 
+              ? `<img src="${quiz.coverImage}" alt="${quiz.title}" class="w-full h-full object-cover">`
+              : `<div class="w-full h-full flex items-center justify-center text-6xl">
+                  ${quiz.type === 'personality' ? '🎭' : '🧠'}
+                </div>`
+            }
+            <div class="absolute top-3 left-3">
+              <span class="type-badge px-3 py-1 rounded-full ${
+                quiz.type === 'personality' 
+                  ? 'bg-quiz-pink/80 text-white' 
+                  : 'bg-quiz-blue/80 text-white'
+              } uppercase font-bold">
+                ${quiz.type}
+              </span>
+            </div>
+          </div>
+          <div class="p-5">
+            <h3 class="font-display font-bold text-xl mb-2 line-clamp-2 text-gray-800">${quiz.title}</h3>
+            <p class="text-gray-500 text-sm mb-4 line-clamp-2">${quiz.description || ''}</p>
+            <div class="flex items-center justify-between text-sm">
+              <span class="category-pill px-3 py-1 rounded-full text-quiz-pink font-medium">
+                ${quiz.category?.replace('_', ' ') || 'General'}
+              </span>
+              <span class="text-gray-400">
+                ${quiz.questionsCount} questions • ${quiz.playCount || 0} plays
+              </span>
+            </div>
+          </div>
+        </a>
+      `).join('');
+    }
+
+    // Load quizzes on page load
+    loadQuizzes();
+  </script>
+</body>
+</html>

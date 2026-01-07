@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz - Quizzle</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            'display': ['Space Grotesk', 'sans-serif'],
+            'body': ['Outfit', 'sans-serif'],
+          },
+          colors: {
+            'quiz-pink': '#FF6B9D',
+            'quiz-purple': '#C44CFF',
+            'quiz-blue': '#4C9FFF',
+            'quiz-yellow': '#FFD93D',
+            'quiz-green': '#6BCB77',
+            'quiz-dark': '#1a1a2e',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: #ffffff;
+      min-height: 100vh;
+    }
+    
+    .gradient-text {
+      background: linear-gradient(135deg, #FF6B9D, #C44CFF, #4C9FFF);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .answer-btn {
+      background: #ffffff;
+      border: 2px solid #e5e7eb;
+      transition: all 0.3s ease;
+      font-size: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    
+    .answer-btn:hover:not(.disabled) {
+      border-color: rgba(196, 76, 255, 0.5);
+      background: rgba(196, 76, 255, 0.05);
+      transform: translateX(8px);
+    }
+    
+    .answer-btn.selected {
+      border-color: #C44CFF;
+      background: linear-gradient(135deg, rgba(196, 76, 255, 0.1), rgba(255, 107, 157, 0.1));
+    }
+    
+    .answer-btn.correct {
+      border-color: #6BCB77 !important;
+      background: rgba(107, 203, 119, 0.1) !important;
+    }
+    
+    .answer-btn.incorrect {
+      border-color: #FF6B6B !important;
+      background: rgba(255, 107, 107, 0.1) !important;
+    }
+    
+    .progress-bar {
+      background: #e5e7eb;
+    }
+    
+    .progress-fill {
+      background: linear-gradient(90deg, #FF6B9D, #C44CFF);
+      transition: width 0.5s ease;
+    }
+    
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .slide-up {
+      animation: slideUp 0.6s ease-out;
+    }
+    
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .result-card {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    
+    .stat-bar-bg {
+      background: #e5e7eb;
+    }
+    
+    .stat-bar-fill {
+      background: linear-gradient(90deg, #FF6B9D, #C44CFF);
+      transition: width 1s ease-out;
+    }
+    
+    .glow-btn {
+      background: linear-gradient(135deg, #FF6B9D, #C44CFF);
+      box-shadow: 0 4px 20px rgba(196, 76, 255, 0.4);
+      transition: all 0.3s ease;
+      color: white;
+    }
+    
+    .glow-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 30px rgba(196, 76, 255, 0.6);
+    }
+    
+    .answer-letter {
+      width: 2.5rem;
+      height: 2.5rem;
+      min-width: 2.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: #f3f4f6;
+      font-weight: 600;
+      margin-right: 1rem;
+      font-size: 1rem;
+    }
+  </style>
+</head>
+<body class="text-gray-800">
+  <!-- Header -->
+  <header class="p-4 border-b border-gray-100">
+    <a href="/" class="font-display text-2xl font-bold gradient-text">QuizVibe</a>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 pb-20">
+    <!-- Loading State -->
+    <div id="loading" class="text-center py-20">
+      <div class="animate-spin w-12 h-12 border-4 border-quiz-purple border-t-transparent rounded-full mx-auto mb-4"></div>
+      <p class="text-gray-500">Loading quiz...</p>
+    </div>
+
+    <!-- Name Input Screen -->
+    <div id="name-screen" class="hidden fade-in">
+      <div class="text-center py-10">
+        <div id="quiz-cover" class="w-full h-64 rounded-2xl bg-gradient-to-br from-quiz-purple/30 to-quiz-pink/30 mb-8 overflow-hidden">
+          <!-- Cover image will be inserted here -->
+        </div>
+        <h1 id="quiz-title" class="font-display text-3xl md:text-4xl font-bold mb-4 text-gray-800"></h1>
+        <p id="quiz-description" class="text-gray-500 text-lg mb-8"></p>
+        
+        <div class="max-w-md mx-auto">
+          <label class="block text-left text-sm text-gray-500 mb-2">What's your name?</label>
+          <input 
+            type="text" 
+            id="user-name" 
+            placeholder="Enter your name..."
+            class="w-full px-6 py-4 rounded-xl bg-gray-50 border border-gray-200 focus:border-quiz-purple focus:outline-none text-lg mb-6 text-gray-800"
+            maxlength="30"
+          >
+          <button 
+            onclick="startQuiz()"
+            class="glow-btn w-full py-4 rounded-xl font-bold text-lg uppercase tracking-wide"
+          >
+            Start Quiz →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Question Screen -->
+    <div id="question-screen" class="hidden">
+      <!-- Progress bar -->
+      <div class="progress-bar h-2 rounded-full mb-8">
+        <div id="progress-fill" class="progress-fill h-full rounded-full" style="width: 0%"></div>
+      </div>
+      
+      <div class="text-center mb-2 text-gray-500">
+        Question <span id="current-q">1</span> of <span id="total-q">10</span>
+      </div>
+      
+      <div id="question-container" class="fade-in">
+        <!-- Question image -->
+        <div id="question-image" class="w-full h-56 rounded-2xl bg-gradient-to-br from-quiz-blue/30 to-quiz-purple/30 mb-6 overflow-hidden">
+          <!-- Question image will be inserted here -->
+        </div>
+        
+        <!-- Question text -->
+        <h2 id="question-text" class="font-display text-2xl md:text-3xl font-bold mb-8 text-center text-gray-800"></h2>
+        
+        <!-- Answer options - column layout -->
+        <div id="answers-container" class="flex flex-col space-y-4">
+          <!-- Answers will be inserted here -->
+        </div>
+        
+        <!-- Explanation (for trivia) -->
+        <div id="explanation" class="hidden mt-6 p-4 rounded-xl bg-gray-50 border border-gray-200">
+          <p class="text-gray-600"></p>
+        </div>
+        
+        <!-- Next button -->
+        <button 
+          id="next-btn"
+          onclick="nextQuestion()"
+          class="hidden glow-btn w-full py-4 rounded-xl font-bold text-lg uppercase tracking-wide mt-8"
+        >
+          Next Question →
+        </button>
+      </div>
+    </div>
+
+    <!-- Results Screen -->
+    <div id="results-screen" class="hidden slide-up">
+      <div class="text-center py-6">
+        <div class="text-5xl mb-4">🎉</div>
+        <h2 class="font-display text-3xl font-bold mb-2 text-gray-800">
+          <span id="result-name"></span>, you are...
+        </h2>
+      </div>
+      
+      <!-- Personality Result -->
+      <div id="personality-result" class="hidden">
+        <div class="result-card rounded-2xl overflow-hidden mb-8">
+          <div id="outcome-image" class="w-full h-64 bg-gradient-to-br from-quiz-pink/30 to-quiz-purple/30">
+            <!-- Outcome image -->
+          </div>
+          <div class="p-6 text-center">
+            <h3 id="outcome-title" class="font-display text-3xl font-bold gradient-text mb-4"></h3>
+            <p id="outcome-description" class="text-gray-600 text-lg"></p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Trivia Result -->
+      <div id="trivia-result" class="hidden">
+        <div class="result-card rounded-2xl p-8 text-center mb-8">
+          <div class="text-6xl font-display font-bold gradient-text mb-2">
+            <span id="score-value">0</span>/<span id="score-total">10</span>
+          </div>
+          <p class="text-gray-500 text-lg">correct answers</p>
+          <div class="mt-4">
+            <span id="score-emoji" class="text-4xl"></span>
+            <p id="score-message" class="text-xl mt-2 text-gray-700"></p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Stats Section -->
+      <div class="result-card rounded-2xl p-6 mb-8">
+        <h4 class="font-display font-bold text-lg mb-4 text-gray-800">📊 How Others Did</h4>
+        <div id="stats-container">
+          <p class="text-gray-500">Loading stats...</p>
+        </div>
+      </div>
+      
+      <!-- Action Buttons -->
+      <div class="flex gap-4">
+        <a href="/" class="flex-1 py-4 rounded-xl font-bold text-center bg-gray-100 hover:bg-gray-200 transition text-gray-700">
+          ← Back to Quizzes
+        </a>
+        <button 
+          onclick="location.reload()"
+          class="flex-1 glow-btn py-4 rounded-xl font-bold"
+        >
+          Retake Quiz
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // State
+    let quiz = null;
+    let userName = '';
+    let currentQuestion = 0;
+    let answers = [];
+    let score = 0;
+
+    // Get quiz ID from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const quizId = urlParams.get('id');
+
+    // Load quiz data
+    async function loadQuiz() {
+      if (!quizId) {
+        window.location.href = '/';
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/quizzes/${quizId}`);
+        if (!response.ok) throw new Error('Quiz not found');
+        
+        quiz = await response.json();
+        document.title = `${quiz.title} - QuizVibe`;
+        
+        showNameScreen();
+      } catch (error) {
+        console.error('Error loading quiz:', error);
+        alert('Quiz not found!');
+        window.location.href = '/';
+      }
+    }
+
+    // Show name input screen
+    function showNameScreen() {
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('name-screen').classList.remove('hidden');
+      
+      document.getElementById('quiz-title').textContent = quiz.title;
+      document.getElementById('quiz-description').textContent = quiz.description || '';
+      
+      if (quiz.coverImage) {
+        document.getElementById('quiz-cover').innerHTML = 
+          `<img src="${quiz.coverImage}" alt="${quiz.title}" class="w-full h-full object-cover">`;
+      }
+      
+      // Focus name input
+      document.getElementById('user-name').focus();
+    }
+
+    // Start the quiz
+    function startQuiz() {
+      userName = document.getElementById('user-name').value.trim();
+      if (!userName) {
+        alert('Please enter your name!');
+        return;
+      }
+      
+      document.getElementById('name-screen').classList.add('hidden');
+      document.getElementById('question-screen').classList.remove('hidden');
+      
+      document.getElementById('total-q').textContent = quiz.questions.length;
+      
+      showQuestion();
+    }
+
+    // Display current question
+    function showQuestion() {
+      const q = quiz.questions[currentQuestion];
+      const container = document.getElementById('question-container');
+      
+      // Update progress
+      const progress = ((currentQuestion) / quiz.questions.length) * 100;
+      document.getElementById('progress-fill').style.width = `${progress}%`;
+      document.getElementById('current-q').textContent = currentQuestion + 1;
+      
+      // Question image
+      const imgContainer = document.getElementById('question-image');
+      if (q.image) {
+        imgContainer.innerHTML = `<img src="${q.image}" alt="Question image" class="w-full h-full object-cover">`;
+      } else {
+        imgContainer.innerHTML = `<div class="w-full h-full flex items-center justify-center text-6xl">${quiz.type === 'personality' ? '🤔' : '❓'}</div>`;
+      }
+      
+      // Question text
+      document.getElementById('question-text').textContent = q.text;
+      
+      // Answer options - column layout with bigger font
+      const answersHtml = quiz.type === 'personality' 
+        ? q.answers.map((a, i) => `
+            <button 
+              onclick="selectAnswer(${i}, '${a.outcome}')"
+              class="answer-btn w-full p-5 rounded-xl text-left font-medium flex flex-row items-center"
+              data-index="${i}"
+            >
+              <span class="answer-letter">${String.fromCharCode(65 + i)}</span>
+              <span class="text-gray-700">${a.text}</span>
+            </button>
+          `).join('')
+        : q.options.map((opt, i) => `
+            <button 
+              onclick="selectTriviaAnswer(${i})"
+              class="answer-btn w-full p-5 rounded-xl text-left font-medium flex flex-row items-center"
+              data-index="${i}"
+            >
+              <span class="answer-letter">${String.fromCharCode(65 + i)}</span>
+              <span class="text-gray-700">${opt}</span>
+            </button>
+          `).join('');
+      
+      document.getElementById('answers-container').innerHTML = answersHtml;
+      document.getElementById('explanation').classList.add('hidden');
+      document.getElementById('next-btn').classList.add('hidden');
+      
+      // Animate in
+      container.classList.remove('fade-in');
+      void container.offsetWidth; // Trigger reflow
+      container.classList.add('fade-in');
+    }
+
+    // Handle personality answer selection
+    function selectAnswer(index, outcome) {
+      answers.push(outcome);
+      
+      // Highlight selected
+      document.querySelectorAll('.answer-btn').forEach((btn, i) => {
+        btn.classList.toggle('selected', i === index);
+      });
+      
+      // Auto-advance after short delay
+      setTimeout(() => {
+        if (currentQuestion < quiz.questions.length - 1) {
+          currentQuestion++;
+          showQuestion();
+        } else {
+          showResults();
+        }
+      }, 400);
+    }
+
+    // Handle trivia answer selection
+    function selectTriviaAnswer(index) {
+      const q = quiz.questions[currentQuestion];
+      const isCorrect = index === q.correctIndex;
+      
+      if (isCorrect) score++;
+      answers.push(index);
+      
+      // Disable all buttons and show correct/incorrect
+      document.querySelectorAll('.answer-btn').forEach((btn, i) => {
+        btn.classList.add('disabled');
+        btn.style.pointerEvents = 'none';
+        
+        if (i === q.correctIndex) {
+          btn.classList.add('correct');
+        } else if (i === index && !isCorrect) {
+          btn.classList.add('incorrect');
+        }
+      });
+      
+      // Show explanation if available
+      if (q.explanation) {
+        const expEl = document.getElementById('explanation');
+        expEl.querySelector('p').textContent = q.explanation;
+        expEl.classList.remove('hidden');
+      }
+      
+      // Show next button
+      const nextBtn = document.getElementById('next-btn');
+      nextBtn.classList.remove('hidden');
+      
+      if (currentQuestion >= quiz.questions.length - 1) {
+        nextBtn.textContent = 'See Results →';
+      }
+    }
+
+    // Go to next question
+    function nextQuestion() {
+      if (currentQuestion < quiz.questions.length - 1) {
+        currentQuestion++;
+        showQuestion();
+      } else {
+        showResults();
+      }
+    }
+
+    // Calculate personality outcome
+    function calculateOutcome() {
+      const counts = {};
+      answers.forEach(a => {
+        counts[a] = (counts[a] || 0) + 1;
+      });
+      
+      let maxOutcome = null;
+      let maxCount = 0;
+      
+      for (const [outcome, count] of Object.entries(counts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          maxOutcome = outcome;
+        }
+      }
+      
+      return maxOutcome;
+    }
+
+    // Show results screen
+    async function showResults() {
+      document.getElementById('question-screen').classList.add('hidden');
+      document.getElementById('results-screen').classList.remove('hidden');
+      document.getElementById('result-name').textContent = userName;
+      
+      let outcomeId = null;
+      
+      if (quiz.type === 'personality') {
+        outcomeId = calculateOutcome();
+        const outcome = quiz.outcomes[outcomeId];
+        
+        document.getElementById('personality-result').classList.remove('hidden');
+        document.getElementById('outcome-title').textContent = outcome.title;
+        document.getElementById('outcome-description').textContent = outcome.description;
+        
+        if (outcome.image) {
+          document.getElementById('outcome-image').innerHTML = 
+            `<img src="${outcome.image}" alt="${outcome.title}" class="w-full h-full object-cover">`;
+        }
+      } else {
+        document.getElementById('trivia-result').classList.remove('hidden');
+        document.getElementById('score-value').textContent = score;
+        document.getElementById('score-total').textContent = quiz.questions.length;
+        
+        const percentage = (score / quiz.questions.length) * 100;
+        let emoji, message;
+        
+        if (percentage >= 90) { emoji = '🏆'; message = 'Incredible! You\'re a genius!'; }
+        else if (percentage >= 70) { emoji = '🌟'; message = 'Great job! Very impressive!'; }
+        else if (percentage >= 50) { emoji = '👍'; message = 'Not bad! Keep learning!'; }
+        else { emoji = '📚'; message = 'Room for improvement. Try again!'; }
+        
+        document.getElementById('score-emoji').textContent = emoji;
+        document.getElementById('score-message').textContent = message;
+      }
+      
+      // Save response to server
+      try {
+        await fetch(`/api/quizzes/${quizId}/responses`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userName,
+            answers,
+            outcome: outcomeId,
+            score: quiz.type === 'trivia' ? score : null
+          })
+        });
+      } catch (e) {
+        console.error('Error saving response:', e);
+      }
+      
+      // Load stats
+      loadStats();
+    }
+
+    // Load and display stats
+    async function loadStats() {
+      try {
+        const response = await fetch(`/api/quizzes/${quizId}/stats`);
+        const stats = await response.json();
+        
+        const container = document.getElementById('stats-container');
+        
+        if (stats.totalResponses === 0) {
+          container.innerHTML = '<p class="text-gray-400">You\'re the first to take this quiz!</p>';
+          return;
+        }
+        
+        if (quiz.type === 'personality' && Object.keys(stats.outcomePercentages).length > 0) {
+          container.innerHTML = Object.entries(stats.outcomePercentages)
+            .sort((a, b) => b[1] - a[1])
+            .map(([outcome, pct]) => {
+              const outcomeData = quiz.outcomes[outcome];
+              return `
+                <div class="mb-4">
+                  <div class="flex justify-between mb-1">
+                    <span class="text-gray-700">${outcomeData?.title || outcome}</span>
+                    <span class="text-quiz-pink font-semibold">${pct}%</span>
+                  </div>
+                  <div class="stat-bar-bg h-3 rounded-full overflow-hidden">
+                    <div class="stat-bar-fill h-full rounded-full" style="width: ${pct}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('');
+        } else if (quiz.type === 'trivia' && stats.averageScore !== null) {
+          container.innerHTML = `
+            <p class="text-lg text-gray-700">Average score: <span class="font-bold text-quiz-pink">${stats.averageScore}/${quiz.questions.length}</span></p>
+            <p class="text-gray-500 mt-1">${stats.totalResponses} people have taken this quiz</p>
+          `;
+        } else {
+          container.innerHTML = `<p class="text-gray-500">${stats.totalResponses} people have taken this quiz</p>`;
+        }
+      } catch (e) {
+        console.error('Error loading stats:', e);
+      }
+    }
+
+    // Handle Enter key on name input
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('user-name').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') startQuiz();
+      });
+    });
+
+    // Initialize
+    loadQuiz();
+  </script>
+</body>
+</html>
