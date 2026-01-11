@@ -3,6 +3,9 @@
     "api_key": "api_key_here",
     "model": "gemini-2.5-flash"
   },
+  "unsplash": {
+    "access_key": "api_key_here"
+  },
   "pollinations": {
     "api_key": "api_key_here",
     "base_url": "https://image.pollinations.ai/prompt",

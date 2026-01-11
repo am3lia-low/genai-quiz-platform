@@ -126,12 +126,20 @@ Return ONLY valid JSON, no markdown formatting or extra text."""
             quiz_data['category'] = category
             quiz_data['createdAt'] = datetime.now().isoformat()
             
+            # Add stock search query for Unsplash (simple keywords work best)
+            quiz_data['stockSearchQuery'] = topic
+            
             # Generate cover image prompt if not present - explicitly no humans and no text
             if 'coverImagePrompt' not in quiz_data:
                 quiz_data['coverImagePrompt'] = f"A vibrant, eye-catching cover illustration for a quiz about {topic}, using only symbols, icons, objects, and patterns, fun and inviting style, absolutely no humans, no people, no faces, no characters, no text, no words, no letters, no writing, illustration only"
             else:
                 # Ensure existing cover prompt has no-humans and no-text guidance
                 quiz_data['coverImagePrompt'] = quiz_data['coverImagePrompt'] + ", absolutely no humans, no people, no faces, no characters, no text, no words, no letters, objects and symbols only"
+            
+            # Add stock search queries for outcomes (for Unsplash fallback)
+            if 'outcomes' in quiz_data:
+                for outcome_id, outcome in quiz_data['outcomes'].items():
+                    outcome['stockSearchQuery'] = f"{topic} {outcome.get('title', outcome_id)}"
             
             return quiz_data
         except Exception as e:
@@ -204,6 +212,10 @@ Return ONLY valid JSON, no markdown formatting or extra text."""
             quiz_data['type'] = 'trivia'
             quiz_data['category'] = category
             quiz_data['createdAt'] = datetime.now().isoformat()
+            
+            # Add stock search query for Unsplash
+            quiz_data['stockSearchQuery'] = f"{topic} trivia knowledge"
+            
             quiz_data['coverImagePrompt'] = f"A dynamic, exciting cover illustration for a trivia quiz about {topic}, knowledge and discovery theme with books, question marks, light bulbs, and symbols, absolutely no humans, no people, no faces, no characters, no text, no words, no letters, no writing"
             
             return quiz_data

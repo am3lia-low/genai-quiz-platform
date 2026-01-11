@@ -1,7 +1,7 @@
 """
-Image Generator Module
-Generates images for quizzes using Pollinations.ai API.
-Updated for the latest Pollinations API (2026) with authentication support.
+Hybrid Image Generator Module
+Uses Unsplash for cover/outcome images (professional, reliable)
+Uses Pollinations AI for question images (creative, unique)
 """
 
 import json
@@ -16,7 +16,13 @@ from pathlib import Path
 
 
 class ImageGenerator:
-    # Words that might trigger human generation - we'll filter these out
+    """
+    Hybrid image generator that combines:
+    - Unsplash API for cover and outcome images (professional stock photos)
+    - Pollinations AI for question images (creative AI-generated illustrations)
+    """
+    
+    # Words that might trigger human generation in AI - we'll filter these out
     HUMAN_TRIGGER_WORDS = [
         'person', 'people', 'human', 'man', 'woman', 'boy', 'girl', 'child',
         'face', 'portrait', 'character', 'figure', 'body', 'hand', 'hands',
@@ -35,7 +41,7 @@ class ImageGenerator:
         'expression', 'expressions', 'facial', 'emotion', 'emotions',
     ]
     
-    # Strong negative prompt to prevent human generation AND text - VERY explicit
+    # Strong negative prompt to prevent human generation AND text in AI images
     NO_HUMANS_NEGATIVE = (
         "absolutely no humans, no people, no faces, no portraits, no characters, "
         "no figures, no bodies, no hands, no eyes, no facial features, "
@@ -49,16 +55,31 @@ class ImageGenerator:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
-        pollinations_config = self.config['pollinations']
+        # ============== UNSPLASH CONFIG ==============
+        unsplash_config = self.config.get('unsplash', {})
+        self.unsplash_access_key = unsplash_config.get('access_key', '')
+        self.unsplash_base_url = "https://api.unsplash.com"
         
-        # API configuration - supports both legacy and new authenticated API
-        self.base_url = pollinations_config.get('base_url', 'https://image.pollinations.ai/prompt')
-        self.api_key = pollinations_config.get('api_key', '')
+        # ============== POLLINATIONS CONFIG ==============
+        pollinations_config = self.config.get('pollinations', {})
+        self.pollinations_base_url = pollinations_config.get('base_url', 'https://image.pollinations.ai/prompt')
+        self.pollinations_api_key = pollinations_config.get('api_key', '')
+        self.pollinations_model = pollinations_config.get('model', 'flux')
         
-        # Model selection (flux is the default, turbo is faster)
-        self.model = pollinations_config.get('model', 'flux')
+        # Style suffix for AI images
+        self.style_suffix = pollinations_config.get(
+            'style_suffix', 
+            'illustration style, no humans, no people, no faces, no text, no words, vibrant colors, detailed'
+        )
         
-        # Image dimensions for different types
+        # AI image features
+        self.enhance_prompt = pollinations_config.get('enhance', False)
+        self.private = pollinations_config.get('private', False)
+        self.safe_mode = pollinations_config.get('safe', True)
+        self.nologo = pollinations_config.get('nologo', True)
+        
+        # ============== SHARED CONFIG ==============
+        # Image dimensions
         self.cover_width = pollinations_config.get('cover_width', 1200)
         self.cover_height = pollinations_config.get('cover_height', 630)
         self.question_width = pollinations_config.get('question_width', 800)
@@ -66,31 +87,164 @@ class ImageGenerator:
         self.outcome_width = pollinations_config.get('outcome_width', 600)
         self.outcome_height = pollinations_config.get('outcome_height', 600)
         
-        # Style suffix to avoid humans and ensure consistent style
-        self.style_suffix = pollinations_config.get(
-            'style_suffix', 
-            'illustration style, no humans, no people, no faces, vibrant colors, detailed'
-        )
-        
-        # API features
-        self.enhance_prompt = pollinations_config.get('enhance', False)
-        self.private = pollinations_config.get('private', False)
-        self.safe_mode = pollinations_config.get('safe', True)
-        self.nologo = pollinations_config.get('nologo', True)
-        
         # Retry settings
         self.max_retries = pollinations_config.get('max_retries', 3)
         self.base_delay = pollinations_config.get('retry_delay_seconds', 5)
         self.timeout = pollinations_config.get('timeout_seconds', 120)
-        
-        # Rate limiting based on tier
-        # Anonymous: 15s, Seed (free registered): 5s, Flower (paid): 3s, Nectar: no limit
         self.request_delay = pollinations_config.get('request_delay_seconds', 5)
+        
+        # Log configuration status
+        self._log_config_status()
+    
+    def _log_config_status(self):
+        """Log the configuration status for debugging."""
+        print("\n[Image Generator Configuration]")
+        if self.unsplash_access_key and self.unsplash_access_key != "YOUR_UNSPLASH_ACCESS_KEY_HERE":
+            print("  ✓ Unsplash: Configured (for covers & outcomes)")
+        else:
+            print("  ⚠ Unsplash: Not configured - will fall back to AI for all images")
+            print("    Get a free API key at: https://unsplash.com/developers")
+        
+        if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
+            print("  ✓ Pollinations: Configured with API key (for questions)")
+        else:
+            print("  ⚠ Pollinations: Using anonymous tier (for questions)")
+        print()
 
+    # ================================================================
+    #                    UNSPLASH METHODS (Stock Photos)
+    # ================================================================
+    
+    def _search_unsplash(self, query: str, width: int = 1200, height: int = 630) -> str:
+        """
+        Search Unsplash for a photo matching the query.
+        Returns the download URL or None if not found.
+        """
+        if not self.unsplash_access_key or self.unsplash_access_key == "YOUR_UNSPLASH_ACCESS_KEY_HERE":
+            return None
+        
+        # Clean up query for better search results
+        search_query = self._simplify_search_query(query)
+        
+        try:
+            # Build search URL
+            params = urllib.parse.urlencode({
+                'query': search_query,
+                'per_page': 10,
+                'orientation': 'landscape' if width > height else 'squarish'
+            })
+            url = f"{self.unsplash_base_url}/search/photos?{params}"
+            
+            # Make request
+            request = urllib.request.Request(url)
+            request.add_header('Authorization', f'Client-ID {self.unsplash_access_key}')
+            request.add_header('Accept-Version', 'v1')
+            
+            with urllib.request.urlopen(request, timeout=30) as response:
+                data = json.loads(response.read().decode())
+                
+                if data['results']:
+                    # Pick a random photo from top results for variety
+                    photo = random.choice(data['results'][:5])
+                    
+                    # Get the sized URL
+                    raw_url = photo['urls']['raw']
+                    sized_url = f"{raw_url}&w={width}&h={height}&fit=crop&crop=entropy"
+                    
+                    return sized_url
+                    
+        except Exception as e:
+            print(f"  ⚠ Unsplash search failed: {e}")
+        
+        return None
+    
+    def _simplify_search_query(self, prompt: str) -> str:
+        """
+        Simplify a detailed image prompt into good Unsplash search keywords.
+        """
+        # Remove common filler words and instructions
+        remove_phrases = [
+            'a vibrant', 'eye-catching', 'cover illustration', 'illustration',
+            'for a quiz', 'about', 'using only', 'symbols', 'icons', 'objects',
+            'patterns', 'fun and inviting', 'style', 'absolutely no', 'no humans',
+            'no people', 'no faces', 'no characters', 'no text', 'no words',
+            'no letters', 'no writing', 'detailed', 'vibrant colors',
+            'dynamic', 'exciting', 'trivia', 'personality', 'quiz',
+            'knowledge and discovery theme', 'with books', 'question marks',
+            'light bulbs', 'and symbols', 'objects and symbols only',
+            'professional', 'high quality', 'beautiful', 'stunning'
+        ]
+        
+        simplified = prompt.lower()
+        for phrase in remove_phrases:
+            simplified = simplified.replace(phrase.lower(), '')
+        
+        # Clean up extra spaces and commas
+        simplified = re.sub(r'[,]+', ' ', simplified)
+        simplified = ' '.join(simplified.split())
+        
+        # Take first few meaningful words (max 4-5 words work best for Unsplash)
+        words = simplified.split()[:5]
+        
+        return ' '.join(words).strip()
+    
+    def _download_unsplash_image(self, url: str, filepath: Path) -> bool:
+        """Download an image from Unsplash URL."""
+        try:
+            request = urllib.request.Request(url)
+            request.add_header('User-Agent', 'QuizPlatform/1.0')
+            
+            with urllib.request.urlopen(request, timeout=30) as response:
+                with open(filepath, 'wb') as f:
+                    f.write(response.read())
+            
+            return filepath.exists() and filepath.stat().st_size > 1000
+            
+        except Exception as e:
+            print(f"  ⚠ Download failed: {e}")
+            return False
+
+    def generate_stock_image(self, query: str, filename: str, output_dir: str,
+                             width: int = 1200, height: int = 630) -> str:
+        """
+        Generate/download a stock image from Unsplash.
+        
+        Args:
+            query: Search query or description
+            filename: Name for the saved file (without extension)
+            output_dir: Directory to save images
+            width: Desired image width
+            height: Desired image height
+        
+        Returns:
+            Path to saved image, or None if failed
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        filepath = output_path / f"{filename}.jpg"
+        
+        print(f"  Searching Unsplash: {self._simplify_search_query(query)[:50]}...")
+        
+        # Search for image
+        image_url = self._search_unsplash(query, width, height)
+        
+        if image_url:
+            if self._download_unsplash_image(image_url, filepath):
+                print(f"  ✓ Saved (Unsplash): {filepath}")
+                time.sleep(1)  # Be nice to API
+                return str(filepath)
+        
+        print(f"  ⚠ Unsplash failed, falling back to AI...")
+        return None
+
+    # ================================================================
+    #                 POLLINATIONS METHODS (AI Images)
+    # ================================================================
+    
     def _sanitize_prompt(self, prompt: str) -> str:
         """
         Remove or replace words that might trigger human generation.
-        Transforms human-centric prompts into object/symbol-based ones.
+        Only used for AI-generated images.
         """
         sanitized = prompt.lower()
         
@@ -182,7 +336,6 @@ class ImageGenerator:
         }
         
         for old, new in replacements.items():
-            # Use word boundaries to avoid partial replacements
             sanitized = re.sub(r'\b' + old + r'\b', new, sanitized, flags=re.IGNORECASE)
         
         # Remove pronouns that suggest humans
@@ -205,24 +358,16 @@ class ImageGenerator:
         return sanitized
 
     def _build_safe_prompt(self, prompt: str) -> str:
-        """
-        Build a prompt that's safe from generating humans.
-        Sanitizes input and adds strong negative guidance.
-        """
-        # First sanitize the prompt
+        """Build a prompt safe from generating humans/text."""
         sanitized = self._sanitize_prompt(prompt)
-        
-        # Build the final prompt with style suffix and explicit no-humans instruction
         safe_prompt = f"{sanitized}, {self.style_suffix}, {self.NO_HUMANS_NEGATIVE}"
-        
         return safe_prompt
 
-    def generate_image(self, prompt: str, filename: str, output_dir: str = "data/images",
-                       width: int = 800, height: int = 600) -> str:
+    def generate_ai_image(self, prompt: str, filename: str, output_dir: str,
+                          width: int = 800, height: int = 450) -> str:
         """
-        Generate an image using Pollinations.ai and save it locally.
-        Includes retry logic for handling temporary failures.
-        Supports both authenticated and anonymous API access.
+        Generate an AI image using Pollinations.ai.
+        Includes guardrails against humans and text.
         
         Args:
             prompt: Text description for the image
@@ -232,74 +377,58 @@ class ImageGenerator:
             height: Image height
         
         Returns:
-            Path to the saved image, or None if all retries failed
+            Path to saved image, or None if failed
         """
-        # Build safe prompt with no-humans guardrails
+        # Build safe prompt with guardrails
         safe_prompt = self._build_safe_prompt(prompt)
-        
-        # URL encode the prompt
         encoded_prompt = urllib.parse.quote(safe_prompt)
         
-        # Add a random seed to avoid caching issues and get unique images
         seed = random.randint(1, 999999)
         
-        # Build the Pollinations URL with API parameters
+        # Build URL with parameters
         params = [
             f"width={width}",
             f"height={height}",
             f"seed={seed}",
-            f"model={self.model}",
+            f"model={self.pollinations_model}",
             f"nologo={str(self.nologo).lower()}",
             f"safe={str(self.safe_mode).lower()}",
         ]
         
-        # Add optional parameters
         if self.enhance_prompt:
             params.append("enhance=true")
         if self.private:
             params.append("private=true")
+        if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
+            params.append(f"key={self.pollinations_api_key}")
         
-        # Add API key to URL if provided (alternative to Bearer token)
-        if self.api_key:
-            params.append(f"key={self.api_key}")
+        url = f"{self.pollinations_base_url}/{encoded_prompt}?{'&'.join(params)}"
         
-        url = f"{self.base_url}/{encoded_prompt}?{'&'.join(params)}"
-        
-        # Ensure output directory exists
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Generate unique filename
         filepath = output_path / f"{filename}.png"
         
         # Retry loop
         for attempt in range(1, self.max_retries + 1):
             try:
-                print(f"  Generating: {filename} (attempt {attempt}/{self.max_retries})...")
+                print(f"  Generating AI image: {filename} (attempt {attempt}/{self.max_retries})...")
                 
-                # Create request with timeout
                 request = urllib.request.Request(url)
                 request.add_header('User-Agent', 'QuizPlatform/1.0')
                 
-                # Add Bearer token authentication if API key is provided
-                if self.api_key:
-                    request.add_header('Authorization', f'Bearer {self.api_key}')
+                if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
+                    request.add_header('Authorization', f'Bearer {self.pollinations_api_key}')
                 
-                # Download with timeout
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    # Check if we got a valid image
                     content_type = response.headers.get('Content-Type', '')
                     if 'image' not in content_type:
                         raise ValueError(f"Expected image, got {content_type}")
                     
-                    # Save the image
                     with open(filepath, 'wb') as f:
                         f.write(response.read())
                 
-                # Verify file was created and has content
                 if filepath.exists() and filepath.stat().st_size > 1000:
-                    print(f"  ✓ Saved: {filepath}")
-                    # Delay between requests based on tier
+                    print(f"  ✓ Saved (AI): {filepath}")
                     time.sleep(self.request_delay)
                     return str(filepath)
                 else:
@@ -308,37 +437,19 @@ class ImageGenerator:
             except urllib.error.HTTPError as e:
                 print(f"  ⚠ HTTP Error {e.code}: {e.reason}")
                 if e.code in [502, 503, 504, 429]:
-                    # Bad Gateway / Service Unavailable / Gateway Timeout / Rate Limited
                     if attempt < self.max_retries:
                         delay = self.base_delay * (2 ** (attempt - 1)) + random.uniform(0, 2)
                         print(f"    Waiting {delay:.1f}s before retry...")
                         time.sleep(delay)
                         continue
                 elif e.code == 401:
-                    print(f"  ✗ Authentication failed. Check your API key at enter.pollinations.ai")
+                    print(f"  ✗ Authentication failed. Check your API key.")
                     break
                 else:
-                    # Other HTTP errors
                     break
             
-            except urllib.error.URLError as e:
-                print(f"  ⚠ URL Error: {e.reason}")
-                if attempt < self.max_retries:
-                    delay = self.base_delay * attempt
-                    print(f"    Waiting {delay}s before retry...")
-                    time.sleep(delay)
-                    continue
-            
-            except TimeoutError:
-                print(f"  ⚠ Request timed out after {self.timeout}s")
-                if attempt < self.max_retries:
-                    delay = self.base_delay * attempt
-                    print(f"    Waiting {delay}s before retry...")
-                    time.sleep(delay)
-                    continue
-            
             except Exception as e:
-                print(f"  ✗ Error: {e}")
+                print(f"  ⚠ Error: {e}")
                 if attempt < self.max_retries:
                     delay = self.base_delay * attempt
                     print(f"    Waiting {delay}s before retry...")
@@ -348,46 +459,64 @@ class ImageGenerator:
         print(f"  ✗ Failed to generate {filename} after {self.max_retries} attempts")
         return None
 
+    # ================================================================
+    #                    HYBRID QUIZ IMAGE GENERATION
+    # ================================================================
+    
     def generate_quiz_images(self, quiz: dict, output_dir: str = "data/images") -> dict:
         """
-        Generate all images for a quiz (cover, questions, outcomes).
+        Generate all images for a quiz using hybrid approach:
+        - Cover: Unsplash (stock photo)
+        - Questions: Pollinations AI (illustrations)
+        - Outcomes: Unsplash (stock photo)
         
-        Args:
-            quiz: The quiz data dictionary
-            output_dir: Base directory for images
-        
-        Returns:
-            Updated quiz dict with image paths
+        Falls back to AI if Unsplash fails or is not configured.
         """
         quiz_id = quiz['id']
         quiz_dir = Path(output_dir) / quiz_id
         quiz_dir.mkdir(parents=True, exist_ok=True)
         
-        print(f"\nGenerating images for: {quiz['title']}")
-        print("-" * 40)
+        print(f"\n{'='*50}")
+        print(f"Generating images for: {quiz['title']}")
+        print(f"{'='*50}")
         
         success_count = 0
         fail_count = 0
         
-        # Generate cover image
+        # ============== COVER IMAGE (Unsplash) ==============
         if 'coverImagePrompt' in quiz:
-            cover_path = self.generate_image(
-                quiz['coverImagePrompt'],
+            print(f"\n[Cover Image - Stock Photo]")
+            cover_path = self.generate_stock_image(
+                quiz.get('stockSearchQuery', quiz['coverImagePrompt']),
                 "cover",
                 str(quiz_dir),
                 width=self.cover_width,
                 height=self.cover_height
             )
+            
+            # Fallback to AI if Unsplash fails
+            if not cover_path:
+                print("  Falling back to AI generation...")
+                cover_path = self.generate_ai_image(
+                    quiz['coverImagePrompt'],
+                    "cover",
+                    str(quiz_dir),
+                    width=self.cover_width,
+                    height=self.cover_height
+                )
+            
             if cover_path:
-                quiz['coverImage'] = f"/images/{quiz_id}/cover.png"
+                ext = Path(cover_path).suffix
+                quiz['coverImage'] = f"/images/{quiz_id}/cover{ext}"
                 success_count += 1
             else:
                 fail_count += 1
         
-        # Generate question images
+        # ============== QUESTION IMAGES (AI) ==============
+        print(f"\n[Question Images - AI Generated]")
         for i, question in enumerate(quiz['questions']):
             if 'imagePrompt' in question:
-                q_path = self.generate_image(
+                q_path = self.generate_ai_image(
                     question['imagePrompt'],
                     f"question-{i+1}",
                     str(quiz_dir),
@@ -400,44 +529,52 @@ class ImageGenerator:
                 else:
                     fail_count += 1
         
-        # Generate outcome images (personality quizzes only)
+        # ============== OUTCOME IMAGES (Unsplash) ==============
         if quiz['type'] == 'personality' and 'outcomes' in quiz:
+            print(f"\n[Outcome Images - Stock Photos]")
             for outcome_id, outcome in quiz['outcomes'].items():
                 if 'imagePrompt' in outcome:
-                    o_path = self.generate_image(
-                        outcome['imagePrompt'],
+                    # Use outcome title as search query for better results
+                    search_query = outcome.get('stockSearchQuery', outcome.get('title', outcome_id))
+                    
+                    o_path = self.generate_stock_image(
+                        search_query,
                         f"outcome-{outcome_id}",
                         str(quiz_dir),
                         width=self.outcome_width,
                         height=self.outcome_height
                     )
+                    
+                    # Fallback to AI if Unsplash fails
+                    if not o_path:
+                        print("  Falling back to AI generation...")
+                        o_path = self.generate_ai_image(
+                            outcome['imagePrompt'],
+                            f"outcome-{outcome_id}",
+                            str(quiz_dir),
+                            width=self.outcome_width,
+                            height=self.outcome_height
+                        )
+                    
                     if o_path:
-                        outcome['image'] = f"/images/{quiz_id}/outcome-{outcome_id}.png"
+                        ext = Path(o_path).suffix
+                        outcome['image'] = f"/images/{quiz_id}/outcome-{outcome_id}{ext}"
                         success_count += 1
                     else:
                         fail_count += 1
         
-        print(f"\n✓ Image generation complete for {quiz_id}")
+        # ============== SUMMARY ==============
+        print(f"\n{'='*50}")
+        print(f"✓ Image generation complete for {quiz_id}")
         print(f"  Success: {success_count} | Failed: {fail_count}")
-        
         if fail_count > 0:
-            print(f"  💡 Tip: Run again later to retry failed images, or try during off-peak hours")
-            if not self.api_key:
-                print(f"  💡 Tip: Get an API key at enter.pollinations.ai for better rate limits")
+            print(f"  💡 Tip: Run retry_failed_images() to attempt recovery")
+        print(f"{'='*50}\n")
         
         return quiz
 
     def retry_failed_images(self, quiz: dict, output_dir: str = "data/images") -> dict:
-        """
-        Retry generating only the missing images for a quiz.
-        
-        Args:
-            quiz: The quiz data dictionary
-            output_dir: Base directory for images
-        
-        Returns:
-            Updated quiz dict with image paths
-        """
+        """Retry generating only the missing images for a quiz."""
         quiz_id = quiz['id']
         quiz_dir = Path(output_dir) / quiz_id
         quiz_dir.mkdir(parents=True, exist_ok=True)
@@ -449,26 +586,27 @@ class ImageGenerator:
         
         # Check cover image
         if 'coverImagePrompt' in quiz and not quiz.get('coverImage'):
-            cover_path = self.generate_image(
-                quiz['coverImagePrompt'],
-                "cover",
-                str(quiz_dir),
-                width=self.cover_width,
-                height=self.cover_height
+            cover_path = self.generate_stock_image(
+                quiz.get('stockSearchQuery', quiz['coverImagePrompt']),
+                "cover", str(quiz_dir),
+                width=self.cover_width, height=self.cover_height
             )
+            if not cover_path:
+                cover_path = self.generate_ai_image(
+                    quiz['coverImagePrompt'], "cover", str(quiz_dir),
+                    width=self.cover_width, height=self.cover_height
+                )
             if cover_path:
-                quiz['coverImage'] = f"/images/{quiz_id}/cover.png"
+                ext = Path(cover_path).suffix
+                quiz['coverImage'] = f"/images/{quiz_id}/cover{ext}"
                 retried += 1
         
         # Check question images
         for i, question in enumerate(quiz['questions']):
             if 'imagePrompt' in question and not question.get('image'):
-                q_path = self.generate_image(
-                    question['imagePrompt'],
-                    f"question-{i+1}",
-                    str(quiz_dir),
-                    width=self.question_width,
-                    height=self.question_height
+                q_path = self.generate_ai_image(
+                    question['imagePrompt'], f"question-{i+1}", str(quiz_dir),
+                    width=self.question_width, height=self.question_height
                 )
                 if q_path:
                     question['image'] = f"/images/{quiz_id}/question-{i+1}.png"
@@ -478,110 +616,67 @@ class ImageGenerator:
         if quiz['type'] == 'personality' and 'outcomes' in quiz:
             for outcome_id, outcome in quiz['outcomes'].items():
                 if 'imagePrompt' in outcome and not outcome.get('image'):
-                    o_path = self.generate_image(
-                        outcome['imagePrompt'],
-                        f"outcome-{outcome_id}",
-                        str(quiz_dir),
-                        width=self.outcome_width,
-                        height=self.outcome_height
+                    search_query = outcome.get('stockSearchQuery', outcome.get('title', outcome_id))
+                    o_path = self.generate_stock_image(
+                        search_query, f"outcome-{outcome_id}", str(quiz_dir),
+                        width=self.outcome_width, height=self.outcome_height
                     )
+                    if not o_path:
+                        o_path = self.generate_ai_image(
+                            outcome['imagePrompt'], f"outcome-{outcome_id}", str(quiz_dir),
+                            width=self.outcome_width, height=self.outcome_height
+                        )
                     if o_path:
-                        outcome['image'] = f"/images/{quiz_id}/outcome-{outcome_id}.png"
+                        ext = Path(o_path).suffix
+                        outcome['image'] = f"/images/{quiz_id}/outcome-{outcome_id}{ext}"
                         retried += 1
         
         print(f"\n✓ Retry complete: {retried} images recovered")
         return quiz
 
-    def generate_single_image(self, prompt: str, quiz_id: str, image_type: str,
-                              output_dir: str = "data/images") -> str:
-        """
-        Generate a single image for a specific purpose.
-        
-        Args:
-            prompt: Image description
-            quiz_id: The quiz this image belongs to
-            image_type: Type identifier (cover, question-1, outcome-hero, etc.)
-            output_dir: Base directory for images
-        
-        Returns:
-            Relative URL path to the image
-        """
-        quiz_dir = Path(output_dir) / quiz_id
-        
-        # Determine dimensions based on type
-        if image_type == "cover":
-            width, height = self.cover_width, self.cover_height
-        elif image_type.startswith("outcome"):
-            width, height = self.outcome_width, self.outcome_height
-        else:
-            width, height = self.question_width, self.question_height
-        
-        filepath = self.generate_image(prompt, image_type, str(quiz_dir), width, height)
-        
-        if filepath:
-            return f"/images/{quiz_id}/{image_type}.png"
-        return None
-
     def list_available_models(self) -> list:
-        """
-        Fetch list of available image models from Pollinations API.
-        
-        Returns:
-            List of model names, or empty list if request fails
-        """
+        """Fetch list of available Pollinations AI models."""
         try:
             url = "https://image.pollinations.ai/models"
             request = urllib.request.Request(url)
             request.add_header('User-Agent', 'QuizPlatform/1.0')
             
-            if self.api_key:
-                request.add_header('Authorization', f'Bearer {self.api_key}')
-            
             with urllib.request.urlopen(request, timeout=30) as response:
-                models = json.loads(response.read().decode())
-                return models
+                return json.loads(response.read().decode())
         except Exception as e:
             print(f"Failed to fetch models: {e}")
             return []
 
 
 def main():
-    """Test the image generator."""
+    """Test the hybrid image generator."""
     generator = ImageGenerator()
     
-    print("=" * 50)
-    print("Testing Image Generator (Pollinations API 2026)")
-    print("=" * 50)
+    print("\n" + "="*50)
+    print("Testing Hybrid Image Generator")
+    print("="*50)
     
-    if generator.api_key:
-        print(f"  API Key: Configured ✓")
-    else:
-        print(f"  API Key: Not configured (using anonymous tier)")
-        print(f"  💡 Get an API key at enter.pollinations.ai for better rate limits")
+    # Test Unsplash
+    print("\n[Test 1: Unsplash Stock Photo]")
+    result = generator.generate_stock_image(
+        "magical fantasy castle",
+        "test-stock",
+        "data/images/test",
+        width=1200,
+        height=630
+    )
+    print(f"Result: {result or 'Failed'}")
     
-    # List available models
-    print("\n[Available Models]")
-    models = generator.list_available_models()
-    if models:
-        print(f"  Models: {', '.join(models[:10])}...")  # Show first 10
-    else:
-        print("  Could not fetch models")
-    
-    # Test single image generation
-    print("\n[Testing Single Image]")
-    test_prompt = "A magical winter scene with snowflakes and warm golden lights, cozy holiday atmosphere"
-    result = generator.generate_image(
-        test_prompt,
-        "test-image",
+    # Test Pollinations AI
+    print("\n[Test 2: Pollinations AI]")
+    result = generator.generate_ai_image(
+        "A magical winter scene with snowflakes and warm golden lights",
+        "test-ai",
         "data/images/test",
         width=800,
         height=450
     )
-    
-    if result:
-        print(f"\nSuccess! Image saved to: {result}")
-    else:
-        print("\nImage generation failed.")
+    print(f"Result: {result or 'Failed'}")
 
 
 if __name__ == "__main__":
