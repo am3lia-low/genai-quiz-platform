@@ -1,6 +1,8 @@
 # 🎯 Quizzle - AI-Powered Quiz Platform
 
-A fun, BuzzFeed-style quiz platform that uses AI to generate engaging personality and trivia quizzes.
+Fun, BuzzFeed-style quiz platform that uses AI to generate engaging personality and trivia quizzes. A mini project of mine while I was having some fun with Gen AI.  
+
+Deployment plans are being made as you explore around!
 
 ## ✨ Features
 
@@ -231,4 +233,4 @@ MIT License - feel free to use and modify!
 
 ---
 
-Built with 💜 by AI assistance • Quizzes by Gemini • Images by Pollinations.ai
+Kindly built with AI assistance • Quizzes by Gemini • Images by Pollinations.ai
