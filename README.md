@@ -1,4 +1,4 @@
-# 🎯 QuizVibe - AI-Powered Quiz Platform
+# 🎯 Quizzle - AI-Powered Quiz Platform
 
 A fun, BuzzFeed-style quiz platform that uses AI to generate engaging personality and trivia quizzes.
 
