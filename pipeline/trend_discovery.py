@@ -8,6 +8,8 @@ import random
 from datetime import datetime
 from pathlib import Path
 
+from pipeline.api_keys import GeminiClientPool, get_gemini_api_keys
+
 try:
     from pytrends.request import TrendReq
     PYTRENDS_AVAILABLE = True
@@ -22,13 +24,6 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 
-PLACEHOLDER_API_KEYS = {"", "api_key_here", "YOUR_GEMINI_API_KEY_HERE"}
-
-
-def has_configured_api_key(value: str) -> bool:
-    return bool(value) and value not in PLACEHOLDER_API_KEYS
-
-
 class TrendDiscovery:
     def __init__(self, config_path: str = "config.json"):
         with open(config_path, 'r') as f:
@@ -36,9 +31,13 @@ class TrendDiscovery:
         
         self.gemini_client = None
         self.gemini_model = self.config['gemini']['model']
+        self.gemini_keys = get_gemini_api_keys(self.config)
         
-        if GEMINI_AVAILABLE and has_configured_api_key(self.config['gemini']['api_key']):
-            self.gemini_client = genai.Client(api_key=self.config['gemini']['api_key'])
+        if GEMINI_AVAILABLE and self.gemini_keys:
+            self.gemini_client = GeminiClientPool(
+                self.gemini_keys,
+                lambda api_key: genai.Client(api_key=api_key)
+            )
         
         self.pytrends = None
         self._pytrends_init_failed = False
@@ -113,7 +112,7 @@ Focus on topics that are:
 Return valid JSON only, no markdown formatting."""
 
         try:
-            response = self.gemini_client.models.generate_content(
+            response = self.gemini_client.generate_content(
                 model=self.gemini_model,
                 contents=prompt
             )

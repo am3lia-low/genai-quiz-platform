@@ -3,3 +3,4 @@
 /node_modules
 /pipeline/__pycache__
 config.json
+.env

@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from pipeline.api_keys import GeminiClientPool, get_gemini_api_keys
+
 try:
     from google import genai
     from google.genai import types
@@ -17,12 +19,7 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 
-PLACEHOLDER_API_KEYS = {"", "api_key_here", "YOUR_GEMINI_API_KEY_HERE"}
 QUALITY_PROFILES = {"economy", "standard", "editorial"}
-
-
-def has_configured_api_key(value: str) -> bool:
-    return bool(value) and value not in PLACEHOLDER_API_KEYS
 
 
 class QuizGenerator:
@@ -32,9 +29,13 @@ class QuizGenerator:
 
         self.gemini_client = None
         self.default_model = self.config.get('gemini', {}).get('model', 'gemini-2.5-flash')
+        self.gemini_keys = get_gemini_api_keys(self.config)
 
-        if GEMINI_AVAILABLE and has_configured_api_key(self.config['gemini']['api_key']):
-            self.gemini_client = genai.Client(api_key=self.config['gemini']['api_key'])
+        if GEMINI_AVAILABLE and self.gemini_keys:
+            self.gemini_client = GeminiClientPool(
+                self.gemini_keys,
+                lambda api_key: genai.Client(api_key=api_key)
+            )
         else:
             print("Warning: Gemini not available. Using sample quiz data.")
 
@@ -211,7 +212,7 @@ class QuizGenerator:
         return json.loads(text)
 
     def _generate_structured(self, prompt: str, schema: dict, model: str) -> dict:
-        response = self.gemini_client.models.generate_content(
+        response = self.gemini_client.generate_content(
             model=model,
             contents=prompt,
             config=types.GenerateContentConfig(

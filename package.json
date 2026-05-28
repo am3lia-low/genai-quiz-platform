@@ -6,9 +6,9 @@
   "scripts": {
     "start": "node server/app.js",
     "dev": "nodemon server/app.js",
-    "test": "node --check server/app.js && .\\.venv\\Scripts\\python.exe -m compileall pipeline generate_quiz.py",
+    "test": "node --check server/app.js && .\\.venv\\Scripts\\python.exe -m compileall pipeline generate_quiz.py && .\\.venv\\Scripts\\python.exe -m unittest discover tests",
     "test:server": "node --check server/app.js",
-    "test:pipeline": ".\\.venv\\Scripts\\python.exe -m compileall pipeline generate_quiz.py"
+    "test:pipeline": ".\\.venv\\Scripts\\python.exe -m compileall pipeline generate_quiz.py && .\\.venv\\Scripts\\python.exe -m unittest discover tests"
   },
   "dependencies": {
     "sql.js": "^1.10.3",

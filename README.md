@@ -67,20 +67,20 @@ pip install -r requirements.txt
 
 ### 2. Configure API Keys
 
-Copy the example config, then edit `config.json` and add your Gemini API key:
+Copy the example config, then create a local `.env` for Gemini API keys:
 
 ```bash
 cp example.config.json config.json
+cp .env.example .env
 ```
 
-```json
-{
-  "gemini": {
-    "api_key": "YOUR_GEMINI_API_KEY_HERE",
-    ...
-  }
-}
+```env
+GEMINI_API_KEY_1=your_first_key
+GEMINI_API_KEY_2=your_second_key
+GEMINI_API_KEY_3=your_third_key
 ```
+
+The pipeline tries key 1 first, then automatically rotates to key 2 and key 3 if a Gemini request fails. The older `config.json` `gemini.api_key` field still works as a fallback.
 
 ### 3. Run the Platform
 
