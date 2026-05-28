@@ -22,6 +22,13 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 
+PLACEHOLDER_API_KEYS = {"", "api_key_here", "YOUR_GEMINI_API_KEY_HERE"}
+
+
+def has_configured_api_key(value: str) -> bool:
+    return bool(value) and value not in PLACEHOLDER_API_KEYS
+
+
 class TrendDiscovery:
     def __init__(self, config_path: str = "config.json"):
         with open(config_path, 'r') as f:
@@ -30,22 +37,36 @@ class TrendDiscovery:
         self.gemini_client = None
         self.gemini_model = self.config['gemini']['model']
         
-        if GEMINI_AVAILABLE and self.config['gemini']['api_key'] != "YOUR_GEMINI_API_KEY_HERE":
+        if GEMINI_AVAILABLE and has_configured_api_key(self.config['gemini']['api_key']):
             self.gemini_client = genai.Client(api_key=self.config['gemini']['api_key'])
         
-        if PYTRENDS_AVAILABLE:
-            self.pytrends = TrendReq(hl='en-US', tz=360)
-        else:
-            self.pytrends = None
+        self.pytrends = None
+        self._pytrends_init_failed = False
+
+    def _get_pytrends(self):
+        """Create the pytrends client only when a trends request needs it."""
+        if not PYTRENDS_AVAILABLE or self._pytrends_init_failed:
+            return None
+
+        if self.pytrends is None:
+            try:
+                self.pytrends = TrendReq(hl='en-US', tz=360)
+            except Exception as e:
+                print(f"pytrends initialization error: {e}")
+                self._pytrends_init_failed = True
+                return None
+
+        return self.pytrends
 
     def get_trending_from_pytrends(self, country: str = 'united_states') -> list[dict]:
         """Fetch trending searches from Google Trends via pytrends."""
-        if not self.pytrends:
+        pytrends = self._get_pytrends()
+        if not pytrends:
             return []
         
         try:
             # Get daily trending searches
-            trending_df = self.pytrends.trending_searches(pn=country)
+            trending_df = pytrends.trending_searches(pn=country)
             topics = trending_df[0].tolist()[:20]  # Get top 20
             
             return [{"topic": topic, "source": "pytrends"} for topic in topics]
@@ -55,12 +76,13 @@ class TrendDiscovery:
 
     def get_related_topics(self, keyword: str) -> list[dict]:
         """Get related topics for a keyword to expand quiz ideas."""
-        if not self.pytrends:
+        pytrends = self._get_pytrends()
+        if not pytrends:
             return []
         
         try:
-            self.pytrends.build_payload([keyword], timeframe='today 3-m')
-            related = self.pytrends.related_queries()
+            pytrends.build_payload([keyword], timeframe='today 3-m')
+            related = pytrends.related_queries()
             
             if keyword in related and related[keyword]['rising'] is not None:
                 rising = related[keyword]['rising']['query'].tolist()[:5]

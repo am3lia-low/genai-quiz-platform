@@ -123,15 +123,15 @@
       
       <!-- Filter buttons -->
       <div class="flex flex-wrap justify-center gap-3 mb-8">
-        <button onclick="filterQuizzes('all')" 
+        <button data-filter="all" 
                 class="filter-btn active px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
           All Quizzes
         </button>
-        <button onclick="filterQuizzes('personality')" 
+        <button data-filter="personality" 
                 class="filter-btn px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
           🎭 Personality
         </button>
-        <button onclick="filterQuizzes('trivia')" 
+        <button data-filter="trivia" 
                 class="filter-btn px-6 py-2 rounded-full bg-gray-100 font-medium text-sm uppercase tracking-wide">
           🧠 Trivia
         </button>
@@ -177,9 +177,23 @@
         renderQuizzes();
       } catch (error) {
         console.error('Error loading quizzes:', error);
-        document.getElementById('quiz-grid').innerHTML = '';
+        clearElement(document.getElementById('quiz-grid'));
         document.getElementById('empty-state').classList.remove('hidden');
       }
+    }
+
+    function clearElement(element) {
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
+    }
+
+    function safeImageSrc(src) {
+      if (typeof src !== 'string') return null;
+      if (src.startsWith('/images/') || src.startsWith('http://') || src.startsWith('https://')) {
+        return src;
+      }
+      return null;
     }
 
     // Filter quizzes
@@ -188,9 +202,8 @@
       
       // Update button styles
       document.querySelectorAll('.filter-btn').forEach(btn => {
-        btn.classList.remove('active');
+        btn.classList.toggle('active', btn.dataset.filter === type);
       });
-      event.target.classList.add('active');
       
       renderQuizzes();
     }
@@ -206,47 +219,82 @@
       }
       
       if (filtered.length === 0) {
-        grid.innerHTML = '';
+        clearElement(grid);
         emptyState.classList.remove('hidden');
         return;
       }
       
       emptyState.classList.add('hidden');
-      
-      grid.innerHTML = filtered.map(quiz => `
-        <a href="/quiz.html?id=${quiz.id}" class="quiz-card rounded-2xl overflow-hidden block">
-          <div class="relative h-48 bg-gradient-to-br from-quiz-purple/30 to-quiz-pink/30">
-            ${quiz.coverImage 
-              ? `<img src="${quiz.coverImage}" alt="${quiz.title}" class="w-full h-full object-cover">`
-              : `<div class="w-full h-full flex items-center justify-center text-6xl">
-                  ${quiz.type === 'personality' ? '🎭' : '🧠'}
-                </div>`
-            }
-            <div class="absolute top-3 left-3">
-              <span class="type-badge px-3 py-1 rounded-full ${
-                quiz.type === 'personality' 
-                  ? 'bg-quiz-pink/80 text-white' 
-                  : 'bg-quiz-blue/80 text-white'
-              } uppercase font-bold">
-                ${quiz.type}
-              </span>
-            </div>
-          </div>
-          <div class="p-5">
-            <h3 class="font-display font-bold text-xl mb-2 line-clamp-2 text-gray-800">${quiz.title}</h3>
-            <p class="text-gray-500 text-sm mb-4 line-clamp-2">${quiz.description || ''}</p>
-            <div class="flex items-center justify-between text-sm">
-              <span class="category-pill px-3 py-1 rounded-full text-quiz-pink font-medium">
-                ${quiz.category?.replace('_', ' ') || 'General'}
-              </span>
-              <span class="text-gray-400">
-                ${quiz.questionsCount} questions • ${quiz.playCount || 0} plays
-              </span>
-            </div>
-          </div>
-        </a>
-      `).join('');
+      clearElement(grid);
+
+      filtered.forEach(quiz => {
+        const card = document.createElement('a');
+        card.href = `/quiz.html?id=${encodeURIComponent(quiz.id)}`;
+        card.className = 'quiz-card rounded-2xl overflow-hidden block';
+
+        const media = document.createElement('div');
+        media.className = 'relative h-48 bg-gradient-to-br from-quiz-purple/30 to-quiz-pink/30';
+
+        const coverImage = safeImageSrc(quiz.coverImage);
+        if (coverImage) {
+          const img = document.createElement('img');
+          img.src = coverImage;
+          img.alt = quiz.title || 'Quiz cover';
+          img.className = 'w-full h-full object-cover';
+          media.appendChild(img);
+        } else {
+          const fallback = document.createElement('div');
+          fallback.className = 'w-full h-full flex items-center justify-center text-6xl';
+          fallback.textContent = quiz.type === 'personality' ? 'ðŸŽ­' : 'ðŸ§ ';
+          media.appendChild(fallback);
+        }
+
+        const badgeWrap = document.createElement('div');
+        badgeWrap.className = 'absolute top-3 left-3';
+        const badge = document.createElement('span');
+        badge.className = `type-badge px-3 py-1 rounded-full ${
+          quiz.type === 'personality' ? 'bg-quiz-pink/80 text-white' : 'bg-quiz-blue/80 text-white'
+        } uppercase font-bold`;
+        badge.textContent = quiz.type || 'quiz';
+        badgeWrap.appendChild(badge);
+        media.appendChild(badgeWrap);
+
+        const content = document.createElement('div');
+        content.className = 'p-5';
+
+        const title = document.createElement('h3');
+        title.className = 'font-display font-bold text-xl mb-2 line-clamp-2 text-gray-800';
+        title.textContent = quiz.title || 'Untitled quiz';
+        content.appendChild(title);
+
+        const description = document.createElement('p');
+        description.className = 'text-gray-500 text-sm mb-4 line-clamp-2';
+        description.textContent = quiz.description || '';
+        content.appendChild(description);
+
+        const meta = document.createElement('div');
+        meta.className = 'flex items-center justify-between text-sm';
+
+        const category = document.createElement('span');
+        category.className = 'category-pill px-3 py-1 rounded-full text-quiz-pink font-medium';
+        category.textContent = quiz.category ? quiz.category.replace('_', ' ') : 'General';
+        meta.appendChild(category);
+
+        const counts = document.createElement('span');
+        counts.className = 'text-gray-400';
+        counts.textContent = `${quiz.questionsCount} questions â€¢ ${quiz.playCount || 0} plays`;
+        meta.appendChild(counts);
+
+        content.appendChild(meta);
+        card.appendChild(media);
+        card.appendChild(content);
+        grid.appendChild(card);
+      });
     }
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => filterQuizzes(btn.dataset.filter));
+    });
 
     // Load quizzes on page load
     loadQuizzes();

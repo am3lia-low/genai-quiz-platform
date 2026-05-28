@@ -1,13 +1,20 @@
 {
   "gemini": {
-    "api_key": "api_key_here",
+    "api_key": "YOUR_GEMINI_API_KEY_HERE",
     "model": "gemini-2.5-flash"
   },
+  "models": {
+    "planner": "gemini-2.5-flash",
+    "generator": "gemini-2.5-flash",
+    "fallback_planner": "gemini-2.5-pro",
+    "editorial_planner": "gemini-2.5-pro",
+    "editorial_generator": "gemini-2.5-pro"
+  },
   "unsplash": {
-    "access_key": "api_key_here"
+    "access_key": "YOUR_UNSPLASH_ACCESS_KEY_HERE"
   },
   "pollinations": {
-    "api_key": "api_key_here",
+    "api_key": "YOUR_POLLINATIONS_API_KEY_HERE",
     "base_url": "https://image.pollinations.ai/prompt",
     "model": "seedream-pro",
     "cover_width": 1200,
@@ -29,11 +36,22 @@
   "quiz_settings": {
     "personality": {
       "questions_per_quiz": 7,
-      "outcomes_count": 4
+      "outcomes_count": 4,
+      "options_per_question": 4,
+      "min_questions": 5,
+      "max_questions": 10,
+      "min_outcomes": 3,
+      "max_outcomes": 6,
+      "min_options_per_question": 3,
+      "max_options_per_question": 5
     },
     "trivia": {
       "questions_per_quiz": 10,
-      "options_per_question": 4
+      "options_per_question": 4,
+      "min_questions": 6,
+      "max_questions": 12,
+      "min_options_per_question": 3,
+      "max_options_per_question": 5
     }
   },
   "categories": {

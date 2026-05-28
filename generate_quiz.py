@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from pipeline.quiz_generator import QuizGenerator
 from pipeline.image_generator import ImageGenerator
+from pipeline.database import Database
 
 
 def generate_quiz(topic: str, quiz_type: str = "personality", category: str = "pop_culture"):
@@ -26,7 +27,7 @@ def generate_quiz(topic: str, quiz_type: str = "personality", category: str = "p
         category: Category for organization
     """
     print(f"\n{'='*60}")
-    print(f"🎯 Generating {quiz_type} quiz about: {topic}")
+    print(f"Generating {quiz_type} quiz about: {topic}")
     print(f"{'='*60}")
     
     # Initialize generators
@@ -40,10 +41,10 @@ def generate_quiz(topic: str, quiz_type: str = "personality", category: str = "p
     else:
         quiz = quiz_gen.generate_trivia_quiz(topic, category)
     
-    print(f"  ✓ Generated: {quiz['title']}")
-    print(f"  ✓ Questions: {len(quiz['questions'])}")
+    print(f"  OK Generated: {quiz['title']}")
+    print(f"  OK Questions: {len(quiz['questions'])}")
     if quiz_type == "personality":
-        print(f"  ✓ Outcomes: {len(quiz.get('outcomes', {}))}")
+        print(f"  OK Outcomes: {len(quiz.get('outcomes', {}))}")
     
     # Generate images
     print("\n[Step 2/3] Generating images...")
@@ -51,19 +52,15 @@ def generate_quiz(topic: str, quiz_type: str = "personality", category: str = "p
     
     # Save quiz JSON
     print("\n[Step 3/3] Saving quiz data...")
-    output_dir = Path("data/quizzes")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    quiz_file = output_dir / f"{quiz['id']}.json"
-    with open(quiz_file, 'w') as f:
-        json.dump(quiz, f, indent=2)
-    print(f"  ✓ Saved: {quiz_file}")
+    quiz_file = quiz_gen.save_quiz(quiz)
+    print(f"  OK Saved: {quiz_file}")
     
     # Update quiz index
     update_quiz_index(quiz)
+    Database().register_quiz(quiz['id'], quiz['type'], quiz['category'], quiz['title'])
     
     print(f"\n{'='*60}")
-    print(f"✅ Quiz generated successfully!")
+    print(f"Quiz generated successfully!")
     print(f"   ID: {quiz['id']}")
     print(f"   File: {quiz_file}")
     print(f"{'='*60}\n")
@@ -115,25 +112,47 @@ def update_quiz_index(quiz: dict):
     # Save index
     with open(index_file, 'w') as f:
         json.dump(index, f, indent=2)
-    print(f"  ✓ Updated index: {index_file}")
+    print(f"  OK Updated index: {index_file}")
 
 
 def list_quizzes():
     """List all generated quizzes."""
-    index_file = Path("data/quizzes/index.json")
-    
-    if not index_file.exists():
+    base_path = Path("data/quizzes")
+    quizzes = []
+
+    for quiz_type in ("personality", "trivia"):
+        type_path = base_path / quiz_type
+        if not type_path.exists():
+            continue
+
+        for quiz_file in type_path.glob("*.json"):
+            try:
+                with open(quiz_file, 'r') as f:
+                    quiz = json.load(f)
+                quizzes.append({
+                    "id": quiz["id"],
+                    "title": quiz["title"],
+                    "type": quiz["type"],
+                    "category": quiz.get("category", "general"),
+                    "questionCount": len(quiz.get("questions", [])),
+                    "createdAt": quiz.get("createdAt", "")
+                })
+            except Exception as e:
+                print(f"Skipping invalid quiz file {quiz_file}: {e}")
+
+    quizzes.sort(key=lambda quiz: quiz.get("createdAt", ""), reverse=True)
+
+    if not quizzes:
         print("No quizzes generated yet!")
         return
-    
-    with open(index_file, 'r') as f:
-        index = json.load(f)
-    
+
+    index = {"quizzes": quizzes}
+
     print(f"\n{'='*60}")
-    print(f"📋 Generated Quizzes ({len(index['quizzes'])} total)")
+    print(f"Generated Quizzes ({len(index['quizzes'])} total)")
     print(f"{'='*60}\n")
     
-    for i, quiz in enumerate(index['quizzes'], 1):
+    for i, quiz in enumerate(quizzes, 1):
         print(f"{i}. [{quiz['type'].upper()}] {quiz['title']}")
         print(f"   ID: {quiz['id']}")
         print(f"   Category: {quiz['category']} | Questions: {quiz['questionCount']}")
@@ -143,21 +162,21 @@ def list_quizzes():
 def interactive_mode():
     """Run in interactive mode - prompt user for input."""
     print("""
-╔════════════════════════════════════════════════════════════╗
-║           🎮 QUIZ GENERATOR - Interactive Mode 🎮           ║
-╠════════════════════════════════════════════════════════════╣
-║  Commands:                                                 ║
-║    generate  - Create a new quiz                           ║
-║    list      - Show all quizzes                            ║
-║    quit      - Exit                                        ║
-╚════════════════════════════════════════════════════════════╝
+============================================================
+QUIZ GENERATOR - Interactive Mode
+============================================================
+Commands:
+  generate  - Create a new quiz
+  list      - Show all quizzes
+  quit      - Exit
+============================================================
 """)
     
     while True:
         command = input("\n> Enter command: ").strip().lower()
         
         if command == "quit" or command == "exit" or command == "q":
-            print("Goodbye! 👋")
+            print("Goodbye!")
             break
             
         elif command == "list" or command == "ls":
@@ -167,7 +186,7 @@ def interactive_mode():
             # Get topic
             topic = input("  Topic (e.g., 'Harry Potter', 'Coffee'): ").strip()
             if not topic:
-                print("  ❌ Topic cannot be empty!")
+                print("  Error: Topic cannot be empty!")
                 continue
             
             # Get quiz type
@@ -185,7 +204,7 @@ def interactive_mode():
             try:
                 generate_quiz(topic, quiz_type, category)
             except Exception as e:
-                print(f"  ❌ Error generating quiz: {e}")
+                print(f"  Error generating quiz: {e}")
         
         else:
             print("  Unknown command. Try: generate, list, or quit")

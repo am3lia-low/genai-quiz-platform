@@ -15,6 +15,13 @@ import os
 from pathlib import Path
 
 
+PLACEHOLDER_API_KEYS = {"", "api_key_here", "YOUR_UNSPLASH_ACCESS_KEY_HERE", "YOUR_POLLINATIONS_API_KEY_HERE"}
+
+
+def has_configured_api_key(value: str) -> bool:
+    return bool(value) and value not in PLACEHOLDER_API_KEYS
+
+
 class ImageGenerator:
     """
     Hybrid image generator that combines:
@@ -99,16 +106,16 @@ class ImageGenerator:
     def _log_config_status(self):
         """Log the configuration status for debugging."""
         print("\n[Image Generator Configuration]")
-        if self.unsplash_access_key and self.unsplash_access_key != "YOUR_UNSPLASH_ACCESS_KEY_HERE":
-            print("  ✓ Unsplash: Configured (for covers & outcomes)")
+        if has_configured_api_key(self.unsplash_access_key):
+            print("  OK Unsplash: Configured (for covers & outcomes)")
         else:
-            print("  ⚠ Unsplash: Not configured - will fall back to AI for all images")
+            print("  Warning Unsplash: Not configured - will fall back to AI for all images")
             print("    Get a free API key at: https://unsplash.com/developers")
         
-        if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
-            print("  ✓ Pollinations: Configured with API key (for questions)")
+        if has_configured_api_key(self.pollinations_api_key):
+            print("  OK Pollinations: Configured with API key (for questions)")
         else:
-            print("  ⚠ Pollinations: Using anonymous tier (for questions)")
+            print("  Warning Pollinations: Using anonymous tier (for questions)")
         print()
 
     # ================================================================
@@ -120,7 +127,7 @@ class ImageGenerator:
         Search Unsplash for a photo matching the query.
         Returns the download URL or None if not found.
         """
-        if not self.unsplash_access_key or self.unsplash_access_key == "YOUR_UNSPLASH_ACCESS_KEY_HERE":
+        if not has_configured_api_key(self.unsplash_access_key):
             return None
         
         # Clean up query for better search results
@@ -154,7 +161,7 @@ class ImageGenerator:
                     return sized_url
                     
         except Exception as e:
-            print(f"  ⚠ Unsplash search failed: {e}")
+            print(f"  Warning Unsplash search failed: {e}")
         
         return None
     
@@ -201,7 +208,7 @@ class ImageGenerator:
             return filepath.exists() and filepath.stat().st_size > 1000
             
         except Exception as e:
-            print(f"  ⚠ Download failed: {e}")
+            print(f"  Warning Download failed: {e}")
             return False
 
     def generate_stock_image(self, query: str, filename: str, output_dir: str,
@@ -230,11 +237,11 @@ class ImageGenerator:
         
         if image_url:
             if self._download_unsplash_image(image_url, filepath):
-                print(f"  ✓ Saved (Unsplash): {filepath}")
+                print(f"  OK Saved (Unsplash): {filepath}")
                 time.sleep(1)  # Be nice to API
                 return str(filepath)
         
-        print(f"  ⚠ Unsplash failed, falling back to AI...")
+        print(f"  Warning Unsplash failed, falling back to AI...")
         return None
 
     # ================================================================
@@ -399,7 +406,7 @@ class ImageGenerator:
             params.append("enhance=true")
         if self.private:
             params.append("private=true")
-        if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
+        if has_configured_api_key(self.pollinations_api_key):
             params.append(f"key={self.pollinations_api_key}")
         
         url = f"{self.pollinations_base_url}/{encoded_prompt}?{'&'.join(params)}"
@@ -416,7 +423,7 @@ class ImageGenerator:
                 request = urllib.request.Request(url)
                 request.add_header('User-Agent', 'QuizPlatform/1.0')
                 
-                if self.pollinations_api_key and self.pollinations_api_key != "YOUR_POLLINATIONS_API_KEY_HERE":
+                if has_configured_api_key(self.pollinations_api_key):
                     request.add_header('Authorization', f'Bearer {self.pollinations_api_key}')
                 
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
@@ -428,14 +435,14 @@ class ImageGenerator:
                         f.write(response.read())
                 
                 if filepath.exists() and filepath.stat().st_size > 1000:
-                    print(f"  ✓ Saved (AI): {filepath}")
+                    print(f"  OK Saved (AI): {filepath}")
                     time.sleep(self.request_delay)
                     return str(filepath)
                 else:
                     raise ValueError("Generated file is too small or empty")
             
             except urllib.error.HTTPError as e:
-                print(f"  ⚠ HTTP Error {e.code}: {e.reason}")
+                print(f"  Warning HTTP Error {e.code}: {e.reason}")
                 if e.code in [502, 503, 504, 429]:
                     if attempt < self.max_retries:
                         delay = self.base_delay * (2 ** (attempt - 1)) + random.uniform(0, 2)
@@ -443,20 +450,20 @@ class ImageGenerator:
                         time.sleep(delay)
                         continue
                 elif e.code == 401:
-                    print(f"  ✗ Authentication failed. Check your API key.")
+                    print(f"  Error Authentication failed. Check your API key.")
                     break
                 else:
                     break
             
             except Exception as e:
-                print(f"  ⚠ Error: {e}")
+                print(f"  Warning Error: {e}")
                 if attempt < self.max_retries:
                     delay = self.base_delay * attempt
                     print(f"    Waiting {delay}s before retry...")
                     time.sleep(delay)
                     continue
         
-        print(f"  ✗ Failed to generate {filename} after {self.max_retries} attempts")
+        print(f"  Error Failed to generate {filename} after {self.max_retries} attempts")
         return None
 
     # ================================================================
@@ -565,10 +572,10 @@ class ImageGenerator:
         
         # ============== SUMMARY ==============
         print(f"\n{'='*50}")
-        print(f"✓ Image generation complete for {quiz_id}")
+        print(f"OK Image generation complete for {quiz_id}")
         print(f"  Success: {success_count} | Failed: {fail_count}")
         if fail_count > 0:
-            print(f"  💡 Tip: Run retry_failed_images() to attempt recovery")
+            print(f"  Tip: Run retry_failed_images() to attempt recovery")
         print(f"{'='*50}\n")
         
         return quiz
@@ -631,7 +638,7 @@ class ImageGenerator:
                         outcome['image'] = f"/images/{quiz_id}/outcome-{outcome_id}{ext}"
                         retried += 1
         
-        print(f"\n✓ Retry complete: {retried} images recovered")
+        print(f"\nOK Retry complete: {retried} images recovered")
         return quiz
 
     def list_available_models(self) -> list:

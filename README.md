@@ -62,12 +62,16 @@ cd quiz-platform
 npm install
 
 # Python dependencies (for quiz generation)
-pip install pytrends google-generativeai
+pip install -r requirements.txt
 ```
 
 ### 2. Configure API Keys
 
-Edit `config.json` and add your Gemini API key:
+Copy the example config, then edit `config.json` and add your Gemini API key:
+
+```bash
+cp example.config.json config.json
+```
 
 ```json
 {
@@ -87,7 +91,7 @@ npm start
 # Visit http://localhost:3001
 ```
 
-The platform comes with 2 sample quizzes so you can test immediately!
+If `data/` is empty in a fresh clone, generate quizzes with the pipeline commands below before opening the gallery.
 
 ## 🎨 Generating New Quizzes
 
@@ -96,6 +100,12 @@ The platform comes with 2 sample quizzes so you can test immediately!
 ```bash
 # Personality quiz with auto-discovered topic
 python pipeline/run_pipeline.py --type personality --category pop_culture
+
+# Show a plan without spending on full quiz or images
+python pipeline/run_pipeline.py --type personality --category movies --topic "Harry Potter" --dry-plan
+
+# Choose from discovered topics interactively
+python pipeline/run_pipeline.py --type trivia --category history --choose-topic
 
 # Trivia quiz with specific topic
 python pipeline/run_pipeline.py --type trivia --category history --topic "Ancient Rome"
@@ -127,6 +137,10 @@ python pipeline/run_pipeline.py --list
 | `--type`, `-t` | Quiz type: `personality` or `trivia` |
 | `--category`, `-c` | Category (pop_culture, history, movies, etc.) |
 | `--topic` | Specific topic (optional, will discover if not provided) |
+| `--choose-topic` | Show discovered topics and choose one interactively |
+| `--shape` | `auto` lets Gemini plan counts; `fixed` uses config counts |
+| `--quality` | `economy`, `standard`, or `editorial` model usage profile |
+| `--dry-plan` | Print the quiz plan and stop before full generation |
 | `--batch`, `-b` | Number of quizzes to generate |
 | `--skip-images` | Skip image generation |
 | `--no-pytrends` | Skip Google Trends, use Gemini only |
@@ -138,18 +152,36 @@ python pipeline/run_pipeline.py --list
 
 ```json
 {
+  "models": {
+    "planner": "gemini-2.5-flash",
+    "generator": "gemini-2.5-flash",
+    "fallback_planner": "gemini-2.5-pro"
+  },
   "quiz_settings": {
     "personality": {
       "questions_per_quiz": 7,
-      "outcomes_count": 4
+      "outcomes_count": 4,
+      "options_per_question": 4,
+      "min_questions": 5,
+      "max_questions": 10,
+      "min_outcomes": 3,
+      "max_outcomes": 6,
+      "min_options_per_question": 3,
+      "max_options_per_question": 5
     },
     "trivia": {
       "questions_per_quiz": 10,
-      "options_per_question": 4
+      "options_per_question": 4,
+      "min_questions": 6,
+      "max_questions": 12,
+      "min_options_per_question": 3,
+      "max_options_per_question": 5
     }
   }
 }
 ```
+
+`--shape auto` uses Gemini to plan the question count, outcome count, options per question, and scoring style within the configured bounds. `--shape fixed` keeps the legacy fixed counts. The generator requests structured JSON from Gemini and validates the result locally before saving.
 
 ### Available Categories
 
@@ -174,18 +206,24 @@ python pipeline/run_pipeline.py --list
 1. **Trend Discovery**: 
    - Tries to fetch trending topics from Google Trends via `pytrends`
    - Falls back to Gemini AI suggestions if pytrends fails or is disabled
+   - `--choose-topic` lets you pick from discovered topics for one-off generation
 
-2. **Quiz Generation**:
-   - Sends structured prompts to Gemini API
-   - Generates questions, answers, and outcome descriptions
-   - Creates image prompts for visual generation
+2. **Quiz Planning**:
+   - Uses fixed config counts or asks Gemini to plan the quiz shape
+   - Plans question count, options per question, outcome count, scoring style, and image direction
+   - Validates the plan against local min/max bounds
 
-3. **Image Generation**:
-   - Uses Pollinations.ai (free, no API key needed)
-   - Generates cover images, question images, and outcome images
+3. **Quiz Generation**:
+   - Sends structured-output requests to Gemini API
+   - Generates questions, answers, outcomes, explanations, and image prompts
+   - Validates question counts, option counts, outcome mappings, and trivia answer indexes
+
+4. **Image Generation**:
+   - Uses Unsplash for cover/outcome images when configured
+   - Uses Pollinations.ai for question images and image fallbacks
    - Images are saved locally and referenced in quiz JSON
 
-4. **Storage**:
+5. **Storage**:
    - Quiz content saved as JSON files
    - User responses stored in SQLite database
    - Statistics calculated from response data

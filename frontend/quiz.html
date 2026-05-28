@@ -145,7 +145,7 @@
 <body class="text-gray-800">
   <!-- Header -->
   <header class="p-4 border-b border-gray-100">
-    <a href="/" class="font-display text-2xl font-bold gradient-text">QuizVibe</a>
+    <a href="/" class="font-display text-2xl font-bold gradient-text">Quizzle</a>
   </header>
 
   <main class="max-w-3xl mx-auto px-4 pb-20">
@@ -295,6 +295,62 @@
     const urlParams = new URLSearchParams(window.location.search);
     const quizId = urlParams.get('id');
 
+    function clearElement(element) {
+      while (element.firstChild) {
+        element.removeChild(element.firstChild);
+      }
+    }
+
+    function safeImageSrc(src) {
+      if (typeof src !== 'string') return null;
+      if (src.startsWith('/images/') || src.startsWith('http://') || src.startsWith('https://')) {
+        return src;
+      }
+      return null;
+    }
+
+    function appendImage(container, src, alt) {
+      const safeSrc = safeImageSrc(src);
+      clearElement(container);
+
+      if (!safeSrc) return false;
+
+      const img = document.createElement('img');
+      img.src = safeSrc;
+      img.alt = alt;
+      img.className = 'w-full h-full object-cover';
+      container.appendChild(img);
+      return true;
+    }
+
+    function appendFallback(container, text) {
+      clearElement(container);
+      const fallback = document.createElement('div');
+      fallback.className = 'w-full h-full flex items-center justify-center text-6xl';
+      fallback.textContent = text;
+      container.appendChild(fallback);
+    }
+
+    function createAnswerButton(index, text, onClick) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'answer-btn w-full p-5 rounded-xl text-left font-medium flex flex-row items-center';
+      button.dataset.index = index;
+      button.addEventListener('click', onClick);
+
+      const letter = document.createElement('span');
+      letter.className = 'answer-letter';
+      letter.textContent = String.fromCharCode(65 + index);
+
+      const label = document.createElement('span');
+      label.className = 'text-gray-700';
+      label.textContent = text;
+
+      button.appendChild(letter);
+      button.appendChild(label);
+      return button;
+    }
+
     // Load quiz data
     async function loadQuiz() {
       if (!quizId) {
@@ -307,7 +363,7 @@
         if (!response.ok) throw new Error('Quiz not found');
         
         quiz = await response.json();
-        document.title = `${quiz.title} - QuizVibe`;
+        document.title = `${quiz.title} - Quizzle`;
         
         showNameScreen();
       } catch (error) {
@@ -325,10 +381,7 @@
       document.getElementById('quiz-title').textContent = quiz.title;
       document.getElementById('quiz-description').textContent = quiz.description || '';
       
-      if (quiz.coverImage) {
-        document.getElementById('quiz-cover').innerHTML = 
-          `<img src="${quiz.coverImage}" alt="${quiz.title}" class="w-full h-full object-cover">`;
-      }
+      appendImage(document.getElementById('quiz-cover'), quiz.coverImage, quiz.title || 'Quiz cover');
       
       // Focus name input
       document.getElementById('user-name').focus();
@@ -362,39 +415,30 @@
       
       // Question image
       const imgContainer = document.getElementById('question-image');
-      if (q.image) {
-        imgContainer.innerHTML = `<img src="${q.image}" alt="Question image" class="w-full h-full object-cover">`;
-      } else {
-        imgContainer.innerHTML = `<div class="w-full h-full flex items-center justify-center text-6xl">${quiz.type === 'personality' ? '🤔' : '❓'}</div>`;
+      if (!appendImage(imgContainer, q.image, 'Question image')) {
+        appendFallback(imgContainer, quiz.type === 'personality' ? '🤔' : '❓');
       }
       
       // Question text
       document.getElementById('question-text').textContent = q.text;
       
       // Answer options - column layout with bigger font
-      const answersHtml = quiz.type === 'personality' 
-        ? q.answers.map((a, i) => `
-            <button 
-              onclick="selectAnswer(${i}, '${a.outcome}')"
-              class="answer-btn w-full p-5 rounded-xl text-left font-medium flex flex-row items-center"
-              data-index="${i}"
-            >
-              <span class="answer-letter">${String.fromCharCode(65 + i)}</span>
-              <span class="text-gray-700">${a.text}</span>
-            </button>
-          `).join('')
-        : q.options.map((opt, i) => `
-            <button 
-              onclick="selectTriviaAnswer(${i})"
-              class="answer-btn w-full p-5 rounded-xl text-left font-medium flex flex-row items-center"
-              data-index="${i}"
-            >
-              <span class="answer-letter">${String.fromCharCode(65 + i)}</span>
-              <span class="text-gray-700">${opt}</span>
-            </button>
-          `).join('');
-      
-      document.getElementById('answers-container').innerHTML = answersHtml;
+      const answersContainer = document.getElementById('answers-container');
+      clearElement(answersContainer);
+
+      if (quiz.type === 'personality') {
+        q.answers.forEach((answer, index) => {
+          answersContainer.appendChild(
+            createAnswerButton(index, answer.text, () => selectAnswer(index, answer.outcome))
+          );
+        });
+      } else {
+        q.options.forEach((option, index) => {
+          answersContainer.appendChild(
+            createAnswerButton(index, option, () => selectTriviaAnswer(index))
+          );
+        });
+      }
       document.getElementById('explanation').classList.add('hidden');
       document.getElementById('next-btn').classList.add('hidden');
       
@@ -506,10 +550,7 @@
         document.getElementById('outcome-title').textContent = outcome.title;
         document.getElementById('outcome-description').textContent = outcome.description;
         
-        if (outcome.image) {
-          document.getElementById('outcome-image').innerHTML = 
-            `<img src="${outcome.image}" alt="${outcome.title}" class="w-full h-full object-cover">`;
-        }
+        appendImage(document.getElementById('outcome-image'), outcome.image, outcome.title || 'Quiz outcome');
       } else {
         document.getElementById('trivia-result').classList.remove('hidden');
         document.getElementById('score-value').textContent = score;
@@ -547,6 +588,68 @@
       loadStats();
     }
 
+    function appendParagraph(parent, text, className) {
+      const paragraph = document.createElement('p');
+      paragraph.className = className;
+      paragraph.textContent = text;
+      parent.appendChild(paragraph);
+      return paragraph;
+    }
+
+    function renderStats(container, stats) {
+      clearElement(container);
+
+      if (stats.totalResponses === 0) {
+        appendParagraph(container, "You're the first to take this quiz!", 'text-gray-400');
+        return;
+      }
+
+      if (quiz.type === 'personality' && Object.keys(stats.outcomePercentages).length > 0) {
+        Object.entries(stats.outcomePercentages)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([outcome, pct]) => {
+            const outcomeData = quiz.outcomes[outcome];
+            const row = document.createElement('div');
+            row.className = 'mb-4';
+
+            const labelRow = document.createElement('div');
+            labelRow.className = 'flex justify-between mb-1';
+
+            const title = document.createElement('span');
+            title.className = 'text-gray-700';
+            title.textContent = outcomeData?.title || outcome;
+
+            const percent = document.createElement('span');
+            percent.className = 'text-quiz-pink font-semibold';
+            percent.textContent = `${pct}%`;
+
+            const barBackground = document.createElement('div');
+            barBackground.className = 'stat-bar-bg h-3 rounded-full overflow-hidden';
+
+            const barFill = document.createElement('div');
+            barFill.className = 'stat-bar-fill h-full rounded-full';
+            barFill.style.width = `${Math.max(0, Math.min(100, Number(pct) || 0))}%`;
+
+            labelRow.appendChild(title);
+            labelRow.appendChild(percent);
+            barBackground.appendChild(barFill);
+            row.appendChild(labelRow);
+            row.appendChild(barBackground);
+            container.appendChild(row);
+          });
+      } else if (quiz.type === 'trivia' && stats.averageScore !== null) {
+        const average = appendParagraph(container, 'Average score: ', 'text-lg text-gray-700');
+        const scoreText = document.createElement('span');
+        scoreText.className = 'font-bold text-quiz-pink';
+        scoreText.textContent = `${stats.averageScore}/${quiz.questions.length}`;
+        average.appendChild(scoreText);
+
+        appendParagraph(container, `${stats.totalResponses} people have taken this quiz`, 'text-gray-500 mt-1');
+      } else {
+        appendParagraph(container, `${stats.totalResponses} people have taken this quiz`, 'text-gray-500');
+      }
+    }
+
     // Load and display stats
     async function loadStats() {
       try {
@@ -554,37 +657,7 @@
         const stats = await response.json();
         
         const container = document.getElementById('stats-container');
-        
-        if (stats.totalResponses === 0) {
-          container.innerHTML = '<p class="text-gray-400">You\'re the first to take this quiz!</p>';
-          return;
-        }
-        
-        if (quiz.type === 'personality' && Object.keys(stats.outcomePercentages).length > 0) {
-          container.innerHTML = Object.entries(stats.outcomePercentages)
-            .sort((a, b) => b[1] - a[1])
-            .map(([outcome, pct]) => {
-              const outcomeData = quiz.outcomes[outcome];
-              return `
-                <div class="mb-4">
-                  <div class="flex justify-between mb-1">
-                    <span class="text-gray-700">${outcomeData?.title || outcome}</span>
-                    <span class="text-quiz-pink font-semibold">${pct}%</span>
-                  </div>
-                  <div class="stat-bar-bg h-3 rounded-full overflow-hidden">
-                    <div class="stat-bar-fill h-full rounded-full" style="width: ${pct}%"></div>
-                  </div>
-                </div>
-              `;
-            }).join('');
-        } else if (quiz.type === 'trivia' && stats.averageScore !== null) {
-          container.innerHTML = `
-            <p class="text-lg text-gray-700">Average score: <span class="font-bold text-quiz-pink">${stats.averageScore}/${quiz.questions.length}</span></p>
-            <p class="text-gray-500 mt-1">${stats.totalResponses} people have taken this quiz</p>
-          `;
-        } else {
-          container.innerHTML = `<p class="text-gray-500">${stats.totalResponses} people have taken this quiz</p>`;
-        }
+        renderStats(container, stats);
       } catch (e) {
         console.error('Error loading stats:', e);
       }

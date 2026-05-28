@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const initSqlJs = require('sql.js');
 
 const app = express();
@@ -74,7 +75,114 @@ function saveDatabase() {
 
 // Helper: Generate short ID
 function generateId() {
-  return Math.random().toString(36).substring(2, 10);
+  return crypto.randomUUID();
+}
+
+// Helper: Run a parameterized SELECT query and return objects.
+function selectRows(sql, params = []) {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+
+  const rows = [];
+  while (stmt.step()) {
+    rows.push(stmt.getAsObject());
+  }
+  stmt.free();
+
+  return rows;
+}
+
+function calculatePersonalityOutcome(answers) {
+  const counts = {};
+  answers.forEach(outcome => {
+    counts[outcome] = (counts[outcome] || 0) + 1;
+  });
+
+  let topOutcome = null;
+  let topCount = 0;
+  Object.entries(counts).forEach(([outcome, count]) => {
+    if (count > topCount) {
+      topOutcome = outcome;
+      topCount = count;
+    }
+  });
+
+  return topOutcome;
+}
+
+function validateResponsePayload(quiz, payload) {
+  const userName = typeof payload.userName === 'string' ? payload.userName.trim() : '';
+  const answers = payload.answers;
+
+  if (!userName) {
+    return { error: 'userName is required' };
+  }
+  if (userName.length > 30) {
+    return { error: 'userName must be 30 characters or fewer' };
+  }
+  if (!Array.isArray(answers)) {
+    return { error: 'answers must be an array' };
+  }
+  if (!Array.isArray(quiz.questions) || answers.length !== quiz.questions.length) {
+    return { error: 'answers must match the quiz question count' };
+  }
+
+  if (quiz.type === 'personality') {
+    const outcomes = quiz.outcomes || {};
+    const validOutcomeIds = new Set(Object.keys(outcomes));
+
+    if (typeof payload.outcome !== 'string' || !validOutcomeIds.has(payload.outcome)) {
+      return { error: 'outcome must be a valid quiz outcome' };
+    }
+    if (payload.score !== undefined && payload.score !== null) {
+      return { error: 'score is not accepted for personality quizzes' };
+    }
+
+    for (let i = 0; i < quiz.questions.length; i += 1) {
+      const answer = answers[i];
+      const questionAnswers = quiz.questions[i].answers || [];
+      const validForQuestion = questionAnswers.some(option => option.outcome === answer);
+
+      if (typeof answer !== 'string' || !validOutcomeIds.has(answer) || !validForQuestion) {
+        return { error: `answers[${i}] is not a valid answer outcome` };
+      }
+    }
+
+    const calculatedOutcome = calculatePersonalityOutcome(answers);
+    if (payload.outcome !== calculatedOutcome) {
+      return { error: 'outcome does not match submitted answers' };
+    }
+
+    return { value: { userName, answers, outcome: calculatedOutcome, score: null } };
+  }
+
+  if (quiz.type === 'trivia') {
+    if (payload.outcome !== undefined && payload.outcome !== null) {
+      return { error: 'outcome is not accepted for trivia quizzes' };
+    }
+
+    let calculatedScore = 0;
+    for (let i = 0; i < quiz.questions.length; i += 1) {
+      const answer = answers[i];
+      const question = quiz.questions[i];
+      const optionsCount = Array.isArray(question.options) ? question.options.length : 0;
+
+      if (!Number.isInteger(answer) || answer < 0 || answer >= optionsCount) {
+        return { error: `answers[${i}] is not a valid option index` };
+      }
+      if (answer === question.correctIndex) {
+        calculatedScore += 1;
+      }
+    }
+
+    if (!Number.isInteger(payload.score) || payload.score !== calculatedScore) {
+      return { error: 'score does not match submitted answers' };
+    }
+
+    return { value: { userName, answers, outcome: null, score: calculatedScore } };
+  }
+
+  return { error: 'Unsupported quiz type' };
 }
 
 // Helper: Load quiz from JSON file
@@ -110,13 +218,8 @@ function getAllQuizzes() {
           try {
             const quiz = JSON.parse(fs.readFileSync(path.join(typePath, file), 'utf-8'));
             // Get play count from database
-            const stmt = db.prepare('SELECT play_count FROM quizzes WHERE id = ?');
-            stmt.bind([quiz.id]);
-            let playCount = 0;
-            if (stmt.step()) {
-              playCount = stmt.getAsObject().play_count || 0;
-            }
-            stmt.free();
+            const rows = selectRows('SELECT play_count FROM quizzes WHERE id = ?', [quiz.id]);
+            const playCount = rows.length > 0 ? rows[0].play_count || 0 : 0;
             
             quizzes.push({
               id: quiz.id,
@@ -173,16 +276,18 @@ app.get('/api/quizzes/:id', (req, res) => {
 // POST /api/quizzes/:id/responses - Submit quiz response
 app.post('/api/quizzes/:id/responses', (req, res) => {
   const quizId = req.params.id;
-  const { userName, answers, outcome, score } = req.body;
-  
-  if (!userName || !answers) {
-    return res.status(400).json({ error: 'userName and answers are required' });
-  }
   
   const quiz = loadQuiz(quizId);
   if (!quiz) {
     return res.status(404).json({ error: 'Quiz not found' });
   }
+
+  const validation = validateResponsePayload(quiz, req.body || {});
+  if (validation.error) {
+    return res.status(400).json({ error: validation.error });
+  }
+
+  const { userName, answers, outcome, score } = validation.value;
   
   const responseId = generateId();
   const now = new Date().toISOString();
@@ -195,8 +300,8 @@ app.post('/api/quizzes/:id/responses', (req, res) => {
   );
   
   // Update or insert quiz record and increment play count
-  const existing = db.exec(`SELECT id FROM quizzes WHERE id = '${quizId}'`);
-  if (existing.length > 0 && existing[0].values.length > 0) {
+  const existing = selectRows('SELECT id FROM quizzes WHERE id = ?', [quizId]);
+  if (existing.length > 0) {
     db.run(`UPDATE quizzes SET play_count = play_count + 1 WHERE id = ?`, [quizId]);
   } else {
     db.run(
@@ -219,52 +324,47 @@ app.get('/api/quizzes/:id/stats', (req, res) => {
   const quizId = req.params.id;
   
   // Total responses
-  const totalResult = db.exec(`SELECT COUNT(*) as total FROM responses WHERE quiz_id = '${quizId}'`);
-  const total = totalResult.length > 0 ? totalResult[0].values[0][0] : 0;
+  const totalRows = selectRows('SELECT COUNT(*) as total FROM responses WHERE quiz_id = ?', [quizId]);
+  const total = totalRows.length > 0 ? totalRows[0].total : 0;
   
   // Outcome distribution
-  const outcomeResult = db.exec(`
+  const outcomeRows = selectRows(`
     SELECT outcome, COUNT(*) as count
     FROM responses
-    WHERE quiz_id = '${quizId}' AND outcome IS NOT NULL
+    WHERE quiz_id = ? AND outcome IS NOT NULL
     GROUP BY outcome
-  `);
+  `, [quizId]);
   
   const outcomeDistribution = {};
   const outcomePercentages = {};
-  if (outcomeResult.length > 0) {
-    outcomeResult[0].values.forEach(row => {
-      const [outcome, count] = row;
-      outcomeDistribution[outcome] = count;
-      outcomePercentages[outcome] = total > 0 ? Math.round((count / total) * 100) : 0;
-    });
-  }
+  outcomeRows.forEach(row => {
+    outcomeDistribution[row.outcome] = row.count;
+    outcomePercentages[row.outcome] = total > 0 ? Math.round((row.count / total) * 100) : 0;
+  });
   
   // Average score
-  const scoreResult = db.exec(`
+  const scoreRows = selectRows(`
     SELECT AVG(score) as avg_score
     FROM responses
-    WHERE quiz_id = '${quizId}' AND score IS NOT NULL
-  `);
-  const avgScore = scoreResult.length > 0 && scoreResult[0].values[0][0] !== null 
-    ? Math.round(scoreResult[0].values[0][0] * 10) / 10 
+    WHERE quiz_id = ? AND score IS NOT NULL
+  `, [quizId]);
+  const avgScore = scoreRows.length > 0 && scoreRows[0].avg_score !== null 
+    ? Math.round(scoreRows[0].avg_score * 10) / 10 
     : null;
   
   // Score distribution
-  const scoreDistResult = db.exec(`
+  const scoreDistRows = selectRows(`
     SELECT score, COUNT(*) as count
     FROM responses
-    WHERE quiz_id = '${quizId}' AND score IS NOT NULL
+    WHERE quiz_id = ? AND score IS NOT NULL
     GROUP BY score
     ORDER BY score
-  `);
+  `, [quizId]);
   
   const scoreDistribution = {};
-  if (scoreDistResult.length > 0) {
-    scoreDistResult[0].values.forEach(row => {
-      scoreDistribution[row[0]] = row[1];
-    });
-  }
+  scoreDistRows.forEach(row => {
+    scoreDistribution[row.score] = row.count;
+  });
   
   res.json({
     totalResponses: total,
@@ -277,24 +377,24 @@ app.get('/api/quizzes/:id/stats', (req, res) => {
 
 // GET /api/responses/:id - Get a specific response
 app.get('/api/responses/:id', (req, res) => {
-  const result = db.exec(`
+  const rows = selectRows(`
     SELECT id, quiz_id, user_name, answers, outcome, score, created_at
-    FROM responses WHERE id = '${req.params.id}'
-  `);
+    FROM responses WHERE id = ?
+  `, [req.params.id]);
   
-  if (result.length === 0 || result[0].values.length === 0) {
+  if (rows.length === 0) {
     return res.status(404).json({ error: 'Response not found' });
   }
   
-  const row = result[0].values[0];
+  const row = rows[0];
   res.json({
-    id: row[0],
-    quizId: row[1],
-    userName: row[2],
-    answers: JSON.parse(row[3]),
-    outcome: row[4],
-    score: row[5],
-    createdAt: row[6]
+    id: row.id,
+    quizId: row.quiz_id,
+    userName: row.user_name,
+    answers: JSON.parse(row.answers),
+    outcome: row.outcome,
+    score: row.score,
+    createdAt: row.created_at
   });
 });
 
